@@ -23,7 +23,7 @@ class Settings(BaseSettings):
         alias="GEMINI_API_KEY"
     )
     llm_provider: str = Field(default="gemini", alias="LLM_PROVIDER")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemma-3-12b-it", alias="GEMINI_MODEL")
     
     # Vector DB Configuration
     vector_db_provider: str = Field(default="pgvector", alias="VECTOR_DB_PROVIDER")
