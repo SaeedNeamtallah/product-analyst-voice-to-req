@@ -31,7 +31,7 @@ class GeminiProvider(LLMInterface):
         
         # Initialize models
         self.chat_model = genai.GenerativeModel(self.model_name)
-        self.embedding_model = "models/text-embedding-004"
+        self.embedding_model = "models/gemini-embedding-001"
         
         logger.info(f"Gemini provider initialized with model: {self.model_name}")
     
@@ -100,29 +100,31 @@ class GeminiProvider(LLMInterface):
         try:
             embeddings = []
             
-            # Process in batches to avoid rate limits
-            batch_size = kwargs.get("batch_size", 10)
+            # Use asyncio.gather for parallel processing with a semaphore to control concurrency
+            # This is significantly faster than sequential processing
+            MAX_CONCURRENT_REQUESTS = 20
+            sem = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
             
-            for i in range(0, len(texts), batch_size):
-                batch = texts[i:i + batch_size]
-                
-                # Generate embeddings for batch
-                loop = asyncio.get_event_loop()
-                batch_embeddings = await loop.run_in_executor(
-                    None,
-                    lambda: [
-                        genai.embed_content(
+            async def embed_single(text):
+                async with sem:
+                    loop = asyncio.get_event_loop()
+                    result = await loop.run_in_executor(
+                        None,
+                        lambda: genai.embed_content(
                             model=self.embedding_model,
                             content=text,
                             task_type="retrieval_document"
-                        )["embedding"]
-                        for text in batch
-                    ]
-                )
-                
-                embeddings.extend(batch_embeddings)
+                        )
+                    )
+                    return result["embedding"]
             
-            return embeddings
+            # Create tasks
+            tasks = [embed_single(text) for text in texts]
+            
+            # Execute in parallel
+            embeddings = await asyncio.gather(*tasks)
+            
+            return list(embeddings)
             
         except Exception as e:
             logger.error(f"Error generating embeddings with Gemini: {str(e)}")

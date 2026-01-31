@@ -3,61 +3,61 @@ chcp 65001 >nul
 color 0E
 echo ========================================
 echo    RAGMind - Update GitHub
-echo    تحديث المشروع على GitHub
+echo    Updating project on GitHub
 echo ========================================
 echo.
 
 :: Check if Git is initialized
 if not exist ".git\" (
-    echo [ERROR] المشروع غير مربوط بـ Git!
-    echo يرجى تشغيل push_to_github.bat أولاً
+    echo [ERROR] Project is not initialized with Git!
+    echo Please run push_to_github.bat first
     pause
     exit /b 1
 )
 
 echo ========================================
-echo 1. إضافة التعديلات الجديدة
+echo 1. Add changes
 echo ========================================
 git add .
-echo [✓] تم إضافة التعديلات
+echo [✓] Changes staged
 echo.
 
 echo ========================================
-echo 2. عرض الملفات المتغيرة
+echo 2. Show changed files
 echo ========================================
 git status --short
 echo.
 
 echo ========================================
-echo 3. عمل Commit
+echo 3. Create commit
 echo ========================================
-set /p COMMIT_MSG="اكتب وصف التعديلات: "
+set /p COMMIT_MSG="Enter commit message: "
 if "%COMMIT_MSG%"=="" set COMMIT_MSG=Update project files
 
 git commit -m "%COMMIT_MSG%"
 if errorlevel 1 (
-    echo [WARNING] لا توجد تغييرات جديدة للـ commit
+    echo [WARNING] No new changes to commit
     echo.
-    choice /C YN /M "هل تريد المتابعة على أي حال؟"
+    choice /C YN /M "Do you want to continue anyway?"
     if errorlevel 2 (
-        echo [INFO] تم الإلغاء
+        echo [INFO] Cancelled
         pause
         exit /b 0
     )
 )
-echo [✓] تم عمل Commit
+echo [✓] Commit created
 echo.
 
 echo ========================================
-echo 4. رفع التحديثات على GitHub
+echo 4. Push updates to GitHub
 echo ========================================
-echo [INFO] جاري رفع التحديثات...
+echo [INFO] Pushing updates...
 git push
 if errorlevel 1 (
     echo.
-    echo [ERROR] فشل رفع التحديثات!
+    echo [ERROR] Failed to push updates!
     echo.
-    echo جرب الأمر التالي:
+    echo Try the following:
     echo   git pull origin main --rebase
     echo   git push
     echo.
@@ -67,7 +67,7 @@ if errorlevel 1 (
 
 echo.
 echo ========================================
-echo ✅ تم تحديث المشروع بنجاح!
+echo ✅ Project updated successfully!
 echo ========================================
 echo.
 pause

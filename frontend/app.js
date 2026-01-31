@@ -253,14 +253,47 @@ const views = {
 
         const sendBtn = document.getElementById('send-btn');
         const chatInput = document.getElementById('chat-input');
+        const clearBtn = document.getElementById('clear-chat-btn');
+
+        // Enable/disable send button based on input
+        chatInput.oninput = () => {
+            sendBtn.disabled = !chatInput.value.trim();
+            autoResizeTextarea(chatInput);
+        };
 
         sendBtn.onclick = handleChatSubmit;
         chatInput.onkeydown = (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                handleChatSubmit();
+                if (chatInput.value.trim()) handleChatSubmit();
             }
         };
+
+        // Clear chat handler
+        if (clearBtn) {
+            clearBtn.onclick = () => {
+                const messagesContainer = document.getElementById('chat-messages');
+                messagesContainer.innerHTML = `
+                    <div class="welcome-msg-pro">
+                        <div class="welcome-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
+                        <p>${state.lang === 'ar' ? 'اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.' : 'Select a project from above and start asking questions.'}</p>
+                    </div>
+                `;
+            };
+        }
+
+        // Suggestion chips handler
+        document.querySelectorAll('.suggestion-chip').forEach(chip => {
+            chip.onclick = () => {
+                chatInput.value = chip.textContent;
+                chatInput.oninput();
+                chatInput.focus();
+            };
+        });
+
         applyTranslations();
     },
 
@@ -559,20 +592,41 @@ async function handleChatSubmit() {
 
 function addChatMessage(role, text, isThinking = false) {
     const messagesContainer = document.getElementById('chat-messages');
-    const welcome = messagesContainer.querySelector('.welcome-msg');
+    const welcome = messagesContainer.querySelector('.welcome-msg-pro');
     if (welcome) welcome.remove();
 
     const id = Date.now();
     const msgDiv = document.createElement('div');
-    msgDiv.className = `chat-msg ${role}-msg`;
+    msgDiv.className = `chat-msg-pro ${role}-msg-pro`;
     msgDiv.id = `msg-${id}`;
+    
+    const isUser = role === 'user';
+    const authorName = isUser 
+        ? (state.lang === 'ar' ? 'أنت' : 'You') 
+        : 'RAGMind';
+    
+    // Detect text direction
+    const textDir = detectTextDirection(text);
+    
     msgDiv.innerHTML = `
-        <div class="msg-avatar">${role === 'user' ? 'U' : '<i class="fas fa-robot"></i>'}</div>
-        <div class="msg-content">
-            <div class="text">${text}</div>
-            ${isThinking ? '<div class="typing-indicator"><span></span><span></span><span></span></div>' : ''}
+        <div class="msg-inner">
+            <div class="msg-avatar-pro">
+                ${isUser ? 'U' : '<i class="fas fa-robot"></i>'}
+            </div>
+            <div class="msg-body">
+                <div class="msg-author">${authorName}</div>
+                <div class="msg-text" dir="${textDir}">${isUser ? escapeHtml(text) : ''}</div>
+                ${isThinking ? '<div class="typing-indicator-pro"><span></span><span></span><span></span></div>' : ''}
+            </div>
         </div>
     `;
+    
+    if (!isUser && !isThinking) {
+        const msgText = msgDiv.querySelector('.msg-text');
+        msgText.innerHTML = escapeHtml(text);
+        msgText.dir = textDir;
+    }
+    
     messagesContainer.appendChild(msgDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     return id;
@@ -582,28 +636,103 @@ function updateChatMessage(id, text, sources = null) {
     const msgDiv = document.getElementById(`msg-${id}`);
     if (!msgDiv) return;
 
-    const content = msgDiv.querySelector('.text');
-    const indicator = msgDiv.querySelector('.typing-indicator');
+    const textEl = msgDiv.querySelector('.msg-text');
+    const indicator = msgDiv.querySelector('.typing-indicator-pro');
     if (indicator) indicator.remove();
 
-    content.textContent = text;
+    const formattedAnswer = formatAnswerHtml(text);
+    textEl.innerHTML = formattedAnswer || escapeHtml(text);
+    textEl.dir = detectTextDirection(text);
 
     if (sources && sources.length > 0) {
         const sourcesDiv = document.createElement('div');
-        sourcesDiv.className = 'msg-sources';
-        sourcesDiv.innerHTML = `<strong>${state.lang === 'ar' ? 'المصادر:' : 'Sources:'}</strong>`;
+        sourcesDiv.className = 'msg-sources-pro';
+        sourcesDiv.innerHTML = `
+            <div class="sources-header">
+                <i class="fas fa-book-open"></i>
+                <span>${state.lang === 'ar' ? 'المصادر المستخدمة' : 'Sources Used'}</span>
+            </div>
+        `;
         const list = document.createElement('ul');
-        sources.slice(0, 3).forEach(s => {
+        sources.slice(0, 5).forEach(s => {
             const li = document.createElement('li');
-            li.textContent = `${s.document_name} (${(s.similarity * 100).toFixed(1)}%)`;
+            li.innerHTML = `
+                <i class="fas fa-file-alt"></i>
+                <span>${escapeHtml(s.document_name)}</span>
+                <span class="source-score">${(s.similarity * 100).toFixed(0)}%</span>
+            `;
             list.appendChild(li);
         });
         sourcesDiv.appendChild(list);
-        msgDiv.querySelector('.msg-content').appendChild(sourcesDiv);
+        msgDiv.querySelector('.msg-body').appendChild(sourcesDiv);
     }
 
     const container = document.getElementById('chat-messages');
     container.scrollTop = container.scrollHeight;
+}
+
+function escapeHtml(value) {
+    if (value == null) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function detectTextDirection(text) {
+    if (!text) return 'auto';
+    // Check for Arabic/Hebrew/Persian characters
+    const rtlChars = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u0590-\u05FF]/;
+    const firstChars = text.trim().substring(0, 50);
+    return rtlChars.test(firstChars) ? 'rtl' : 'ltr';
+}
+
+function formatAnswerHtml(text) {
+    if (!text) return '';
+
+    let cleaned = String(text).replace(/\r\n/g, '\n').trim();
+    cleaned = cleaned.replace(/\s*(Source|Sources|المصدر|المصادر)\s*:.*/gi, '').trim();
+    cleaned = cleaned.replace(/\s+\*\s+/g, '\n* ');
+    cleaned = cleaned.replace(/\s+-\s+/g, '\n- ');
+
+    const lines = cleaned.split('\n').map(line => line.trim()).filter(Boolean);
+    if (lines.length === 0) return '';
+
+    const parts = [];
+    let listBuffer = [];
+
+    const flushList = () => {
+        if (listBuffer.length === 0) return;
+        const items = listBuffer
+            .map(item => `<li>${formatInlineMarkdown(item)}</li>`)
+            .join('');
+        parts.push(`<ul class="answer-list">${items}</ul>`);
+        listBuffer = [];
+    };
+
+    lines.forEach(line => {
+        if (/^[*-]\s+/.test(line)) {
+            listBuffer.push(line.replace(/^[*-]\s+/, ''));
+            return;
+        }
+        flushList();
+        parts.push(`<p class="answer-paragraph">${formatInlineMarkdown(line)}</p>`);
+    });
+
+    flushList();
+    return parts.join('');
+}
+
+function formatInlineMarkdown(value) {
+    const escaped = escapeHtml(value);
+    return escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+}
+
+function autoResizeTextarea(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
 }
 
 function setupUploadZone(projectId) {

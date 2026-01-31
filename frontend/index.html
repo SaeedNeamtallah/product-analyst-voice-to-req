@@ -155,36 +155,50 @@
     </template>
 
     <template id="chat-template">
-        <div class="chat-view">
-            <div class="chat-sidebar">
-                <h3 data-i18n="select_project_ph">اختر مشروعاً</h3>
-                <select id="chat-project-select" class="form-control">
-                    <option value="" data-i18n="select_project_ph">اختر مشروعاً للبدء...</option>
-                </select>
-                <div class="chat-settings">
-                    <label>اللغة:</label>
-                    <select id="chat-lang" class="form-control">
-                        <option value="ar">العربية</option>
-                        <option value="en">English</option>
-                    </select>
+        <div class="chat-view-pro">
+            <!-- Chat Header -->
+            <div class="chat-header-pro">
+                <div class="chat-header-content">
+                    <div class="chat-controls">
+                        <select id="chat-project-select" class="chat-select">
+                            <option value="" data-i18n="select_project_ph">اختر مشروعاً...</option>
+                        </select>
+                        <select id="chat-lang" class="chat-select chat-select-small">
+                            <option value="ar">العربية</option>
+                            <option value="en">English</option>
+                        </select>
+                    </div>
+                    <button id="clear-chat-btn" class="chat-clear-btn" title="مسح المحادثة">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
                 </div>
             </div>
-            <div class="chat-main">
-                <div class="chat-messages" id="chat-messages">
-                    <div class="welcome-msg">
+
+            <!-- Messages Area -->
+            <div class="chat-messages-pro" id="chat-messages">
+                <div class="welcome-msg-pro">
+                    <div class="welcome-icon">
                         <i class="fas fa-robot"></i>
-                        <h2>كيف يمكنني مساعدتك اليوم؟</h2>
-                        <p>اختر مشروعاً من القائمة الجانبية وابدأ في طرح الأسئلة حول مستنداتك.</p>
+                    </div>
+                    <h2>كيف يمكنني مساعدتك اليوم؟</h2>
+                    <p>اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.</p>
+                    <div class="welcome-suggestions">
+                        <button class="suggestion-chip">ما هو ملخص المستندات؟</button>
+                        <button class="suggestion-chip">اشرح لي المحتوى الرئيسي</button>
+                        <button class="suggestion-chip">ما هي النقاط المهمة؟</button>
                     </div>
                 </div>
-                <div class="chat-input-container">
-                    <div class="chat-input-wrapper">
-                        <textarea id="chat-input" placeholder="اسأل أي شيء حول مستنداتك..." rows="1"></textarea>
-                        <button id="send-btn" class="send-btn">
-                            <i class="fas fa-paper-plane"></i>
-                        </button>
-                    </div>
+            </div>
+
+            <!-- Input Area -->
+            <div class="chat-input-pro">
+                <div class="chat-input-wrapper-pro">
+                    <textarea id="chat-input" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
+                    <button id="send-btn" class="send-btn-pro" disabled>
+                        <i class="fas fa-arrow-up"></i>
+                    </button>
                 </div>
+                <p class="chat-disclaimer">RAGMind يجيب من مستنداتك فقط. تحقق دائماً من المعلومات المهمة.</p>
             </div>
         </div>
     </template>

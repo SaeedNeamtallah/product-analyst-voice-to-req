@@ -47,7 +47,7 @@ class AnswerService:
             answer = await self.llm_provider.generate_text(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=1024
+                max_tokens=25000
             )
             
             # Format response

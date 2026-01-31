@@ -11,19 +11,19 @@ import json
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # Database Configuration
+    # Database Configuration (Docker on port 5435)
     database_url: str = Field(
-        default="postgresql+asyncpg://postgres:Ezz123456@localhost:5432/ragmind",
+        default="postgresql+asyncpg://ragmind:ragmind123@localhost:5435/ragmind",
         alias="DATABASE_URL"
     )
     
     # LLM Provider Configuration
     gemini_api_key: str = Field(
-        default="AIzaSyD2N-rsmfER9P2dZznBh4wXKAFZRajJ0eU",
+        default="",
         alias="GEMINI_API_KEY"
     )
     llm_provider: str = Field(default="gemini", alias="LLM_PROVIDER")
-    gemini_model: str = Field(default="gemma-3-12b-it", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     
     # Vector DB Configuration
     vector_db_provider: str = Field(default="pgvector", alias="VECTOR_DB_PROVIDER")

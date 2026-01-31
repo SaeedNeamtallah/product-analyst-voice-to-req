@@ -1,364 +1,227 @@
-# RAGMind - Intelligent Document Q&A System
+# 🧠 RAGMind - Intelligent Document Intelligence Platform
 
-A robust Retrieval-Augmented Generation (RAG) system built with FastAPI that enables document upload, intelligent processing, vector-based similarity search, and AI-powered answer generation. Upload documents (PDF, TXT, DOCX), automatically process them into searchable chunks with embeddings, store in PostgreSQL with pgvector, and retrieve contextual answers powered by Google Gemini for your AI applications.
+![Project Status](https://img.shields.io/badge/Status-Active-success)
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-green)
+![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange)
+![License](https://img.shields.io/badge/License-MIT-purple)
 
-## 🏗️ Architecture Overview
+**RAGMind** is an enterprise-grade Retrieval-Augmented Generation (RAG) system designed to transform static documents into interactive knowledge bases. By leveraging **Google's Gemini 2.5 Flash** for reasoning and **pgvector/Qdrant** for semantic search, it offers a high-precision, low-latency solution for specific domain knowledge extraction.
 
-### Core Components
-
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│   Web Client    │────▶│   FastAPI API   │────▶│   Controllers   │
-│  (Upload/Query) │     │   Routes        │     │  (Business      │
-│   + Telegram    │     │                 │     │   Logic)        │
-└─────────────────┘     └─────────────────┘     └─────────┬───────┘
-                                                           │
-                        ┌──────────────────────────────────┼──────────────┐
-                        ▼                                  ▼              ▼
-                ┌───────────────┐              ┌──────────────┐  ┌──────────────┐
-                │  PostgreSQL   │              │ LLM Provider │  │ Vector DB    │
-                │  + pgvector   │              │ (Google      │  │ (pgvector/   │
-                │  (Chunks,     │              │  Gemini      │  │  Qdrant)     │
-                │   Projects,   │              │  2.5 Flash)  │  │              │
-                │   Assets)     │              │              │  │              │
-                └───────────────┘              └──────────────┘  └──────────────┘
-                        ▲                              ▲                  ▲
-                        │                              │                  │
-                        └──────────┬───────────────────┴──────────────────┘
-                                   ▼
-                        ┌─────────────────┐     ┌─────────────────┐
-                        │   LangChain     │────▶│   Document      │
-                        │  Text Splitter  │     │   Loaders       │
-                        │  (Chunking)     │     │  (PDF, TXT,     │
-                        │                 │     │   DOCX)         │
-                        └─────────────────┘     └─────────────────┘
-                                   ▲
-                                   │
-                        ┌─────────────────┐
-                        │   File Storage  │
-                        │  (Project-based │
-                        │   Organization) │
-                        └─────────────────┘
-```
-
-### Data Flow
-
-```
-Document Upload → File validation → Unique naming → Project storage
-                                                          ↓
-Document Processing → Content extraction → Text chunking → Metadata preservation
-                                                          ↓
-Data Storage → PostgreSQL (via SQLAlchemy async) → Project organization
-                                                          ↓
-Vector Embeddings → Gemini Embeddings → Generate embeddings → Store in VectorDB
-                                                          ↓
-Similarity Search → Query vectors → VectorDB search → Retrieve top-k chunks
-                                                          ↓
-Answer Generation → Prompt construction → Gemini LLM → AI-powered answers
-```
-
-### Provider Architecture
-
-The system uses a **Factory Pattern** for extensible provider management:
-
-#### LLM Providers:
-- Abstract `LLMInterface` defines the contract
-- `LLMProviderFactory` creates provider instances
-- Support for **Google Gemini** (easily extensible to OpenAI, Cohere, etc.)
-- Unified API for text generation and embeddings
-
-#### VectorDB Providers:
-- Abstract `VectorDBInterface` defines the contract
-- `VectorDBProviderFactory` creates provider instances
-- **PGVector** implementation for PostgreSQL with pgvector extension
-- **Qdrant** implementation for standalone vector storage
-- Support for collection management and similarity search
-- Configurable distance metrics (cosine, dot product, L2)
-
-
-# Storage Configuration
-UPLOAD_DIR=./uploads
-MAX_FILE_SIZE_MB=50
-
-# Text Chunking Configuration
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=200
-
-# API Configuration
-API_HOST=0.0.0.0
-API_PORT=8000
-
-# Telegram Bot Configuration (Optional)
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_ADMIN_ID=
-
-# CORS Configuration
-CORS_ORIGINS=["http://localhost:3000", "http://localhost:8080"]
-
-# Logging Configuration
-LOG_LEVEL=INFO
-```
-
-## 📊 Database Schema
-
-### PostgreSQL Tables (with pgvector extension)
-
-#### `projects` Table
-
-```sql
-CREATE TABLE projects (
-    id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE,
-    metadata JSONB DEFAULT '{}'
-);
-
-CREATE INDEX ix_projects_name ON projects(name);
-```
-
-#### `assets` Table
-
-```sql
-CREATE TABLE assets (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    filename VARCHAR(500) NOT NULL,
-    original_filename VARCHAR(500) NOT NULL,
-    file_path VARCHAR(1000) NOT NULL,
-    file_size INTEGER NOT NULL,
-    file_type VARCHAR(50) NOT NULL,
-    status VARCHAR(50) DEFAULT 'uploaded',
-    error_message TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    processed_at TIMESTAMP WITH TIME ZONE,
-    metadata JSONB DEFAULT '{}'
-);
-
-CREATE INDEX ix_assets_project_id ON assets(project_id);
-CREATE INDEX ix_assets_status ON assets(status);
-```
-
-#### `chunks` Table
-
-```sql
-CREATE TABLE chunks (
-    id SERIAL PRIMARY KEY,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    asset_id INTEGER NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    embedding JSONB,
-    metadata JSONB DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE INDEX ix_chunks_project_id ON chunks(project_id);
-CREATE INDEX ix_chunks_asset_id ON chunks(asset_id);
-```
-
-### Schema Features
-
-- ✅ **Foreign Keys**: Proper relationships with cascading deletes
-- ✅ **JSONB**: Flexible metadata storage
-- ✅ **Timestamps**: Automatic tracking of creation/update times
-- ✅ **Indexes**: Optimized for common query patterns
-- ✅ **Vector Support**: pgvector extension for similarity search
-
-## 📋 Prerequisites & Installation
-
-### Prerequisites
-
-- Python 3.8+
-- PostgreSQL 14+ with pgvector extension
-- Google Gemini API Key
-- (Optional) Qdrant for vector storage
-- (Optional) Telegram Bot Token
-
-### Quick Start (Automated)
-
-1. **Clone the repository:**
-
-```bash
-git clone https://github.com/yourusername/RAGMind.git
-cd RAGMind
-```
-
-2. **Run the automated setup script:**
-
-```bash
-setup.bat
-```
-
-The setup script will:
-- ✅ Check Python installation
-- ✅ Create virtual environment
-- ✅ Install all dependencies
-- ✅ Create `.env` file from template
-- ✅ Create necessary directories
-- ✅ Guide database setup
-
-3. **Configure environment variables:**
-
-Edit `.env` file and add:
-- `DATABASE_URL`
-- `GEMINI_API_KEY`
-- (Optional) `TELEGRAM_BOT_TOKEN`
-
-4. **Setup PostgreSQL:**
-
-```sql
-CREATE DATABASE ragmind;
-\c ragmind
-CREATE EXTENSION vector;
-```
-
-5. **Initialize database tables:**
-
-```bash
-python -m backend.init_database
-```
-
-6. **Start the application:**
-
-```bash
-start_backend.bat
-```
-
-7. **Access the application:**
-- Web UI: http://localhost:8000
-- API Docs: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc
-
-### Manual Installation
-
-```bash
-# 1. Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-
-# 2. Install dependencies
-pip install -r backend/requirements.txt
-
-# 3. Create .env file
-cp .env.example .env
-# Edit .env with your credentials
-
-# 4. Setup PostgreSQL
-# Create database and install pgvector extension
-
-# 5. Initialize database
-python -m backend.init_database
-
-# 6. Run the application
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-## 🧪 Testing - Complete RAG Workflow
-
-### Step-by-Step Testing
-
-```bash
-# 1. Create a project
-curl -X POST "http://localhost:8000/projects/" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "name": "Test Project",
-       "description": "Testing RAG workflow"
-     }'
-
-# 2. Upload a PDF document
-curl -X POST "http://localhost:8000/projects/1/documents" \
-     -F "file=@sample.pdf"
-
-# 3. Wait for automatic processing (status will change to 'completed')
-# Check document status:
-curl "http://localhost:8000/projects/1/documents"
-
-# 4. Query the documents
-curl -X POST "http://localhost:8000/projects/1/query" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "query": "What is the main topic?",
-       "language": "en",
-       "top_k": 5
-     }'
-
-# 5. Verify data in PostgreSQL
-psql -U postgres -d ragmind
-# SELECT COUNT(*) FROM chunks WHERE project_id = 1;
-# SELECT * FROM assets WHERE project_id = 1;
-```
-
-### Testing Telegram Bot
-
-1. Start the bot:
-```bash
-start_telegram_bot.bat
-```
-
-2. Configure active project in web UI:
-- Go to "Bot Settings"
-- Select active project
-- Save configuration
-
-3. Chat with bot on Telegram:
-```
-/start
-Ask any question about your documents
-```
-
-## 🔐 Security Considerations
-
-- ✅ **API Keys**: Stored in `.env` file (gitignored)
-- ✅ **CORS**: Configured for allowed origins only
-- ✅ **File Validation**: Type and size checks on upload
-- ✅ **Database**: Async connection pooling with SQLAlchemy
-- ✅ **Error Handling**: Graceful error messages without sensitive data
-- ✅ **SQL Injection**: Protected by SQLAlchemy ORM
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-**Database Connection Error:**
-```
-✓ Ensure PostgreSQL is running
-✓ Verify DATABASE_URL in .env
-✓ Check pgvector extension is installed
-```
-
-**Gemini API Error:**
-```
-✓ Verify GEMINI_API_KEY is valid
-✓ Check API quota/limits
-✓ Ensure internet connection
-```
-
-**File Upload Fails:**
-```
-✓ Check upload directory has write permissions
-✓ Verify file type is supported (PDF, TXT, DOCX)
-✓ Ensure file size under MAX_FILE_SIZE_MB
-```
-
-**Vector Search Returns No Results:**
-```
-✓ Verify documents are processed (status='completed')
-✓ Check embeddings are generated
-✓ Confirm Vector DB connection
-```
-
-## 📝 License
-
-This project is licensed under the MIT License. See [LICENSE](LICENSE) file for details.
-
-## 👥 Contributors
-
-**Abdulmoezz Elwakil** ([@AbdulmoezzElwakil](https://github.com/ZozElwakil))
+Built for the **EELU University Project**, this system bridges the gap between raw data and actionable intelligence.
 
 ---
 
-**Built with ❤️ for EELU University Project**
+## 🚀 Key Use Cases
+
+### 1. 🎓 Academic & Research Assistant
+Ideal for students and researchers handling massive volumes of papers and textbooks.
+*   **Scenario**: A student uploads 10 PDF textbooks and 20 lecture slides.
+*   **Action**: "Provide a comparative summary of 'Neural Networks' vs 'Decision Trees' based on Chapters 4 and 5."
+*   **Outcome**: The system retrieves specific paragraphs from both chapters and synthesizes a coherent comparison with citations.
+
+```mermaid
+graph LR
+    A[Student] -->|Uploads Thesis/Notes| B(Document Ingestion)
+    B --> C{Knowledge Base}
+    A -->|Ask: 'Explain Quantum Entanglement'| D[RAG Engine]
+    C --> D
+    D -->|Synthesized Answer| A
+```
+
+### 2. ⚖️ Legal Contract Analysis
+For legal professionals reviewing complex agreements.
+*   **Scenario**: Uploading a 50-page Service Level Agreement (SLA).
+*   **Action**: "What are the termination clauses and penalties for early exit?"
+*   **Outcome**: Extracts exact clauses, references page numbers, and summarizes the risk factors.
+
+### 3. 🏢 Corporate Knowledge Hub
+For HR and IT departments to automate internal support.
+*   **Scenario**: Storing company policies, insurance documents, and IT troubleshooting guides.
+*   **Action**: Employee asks "How do I claim dental insurance?" via Telegram Bot.
+*   **Outcome**: Instant instructions with links to the relevant forms found in the "Employee Handbook 2024".
+
+---
+
+## 🛠️ System Architecture
+
+RAGMind follows a modern, decoupled microservices-ready architecture using the **Factory Pattern** for provider flexibility.
+
+```mermaid
+graph TD
+    subgraph Frontend ["User Interfaces"]
+        UI[Web Dashboard]
+        TG[Telegram Bot]
+    end
+
+    subgraph Backend ["FastAPI Application Layer"]
+        API[API Routes]
+        Auth[Auth Middleware]
+        
+        subgraph Services ["Core Services"]
+            Loader[Document Loader]
+            Chunker[Text Splitter]
+            Embedder[Embedding Service]
+            Retriever[Query Service]
+            GenAI[LLM Answer Service]
+        end
+    end
+
+    subgraph Data ["Persistence Layer"]
+        PG[(PostgreSQL + pgvector)]
+        FS[File Storage]
+        Qdrant[(Qdrant Vector DB)]
+    end
+
+    UI -->|HTTP/REST| API
+    TG -->|Webhook| API
+    
+    API --> Services
+    
+    Loader -->|Raw Text| Chunker
+    Chunker -->|Chunks| Embedder
+    Embedder -->|Vectors| PG
+    Embedder -->|Vectors| Qdrant
+    
+    Retriever <-->|Semantic Search| PG
+    Retriever <-->|Semantic Search| Qdrant
+    
+    GenAI <-->|Inference| Gemini[Google Gemini API]
+```
+
+---
+
+## ⚙️ The Technical Pipeline (Deep Dive)
+
+The system processes data through a strict **ETL (Extract, Transform, Load)** pipeline optimized for RAG.
+
+### Phase 1: Ingestion & Chunking
+1.  **File Upload**: Supports PDF, DOCX, TXT. Files are validated for MIME type and size.
+2.  **Text Extraction**: content is stripped of non-printable characters.
+3.  **Recursive Chunking**:
+    *   Strategy: `RecursiveCharacterTextSplitter`
+    *   Configuration: `chunk_size=1000`, `chunk_overlap=200`
+    *   **Why?**: This preserves semantic context by keeping paragraphs together while ensuring chunks fit within the embedding model's context window.
+
+### Phase 2: Vectorization (Embedding)
+1.  **Model**: `models/gemini-embedding-001` (Google).
+2.  **Dimension**: 768-dimensional dense vectors.
+3.  **Batching**: Chunks are processed in batches (default: 10) to respect API rate limits.
+
+### Phase 3: Retrieval & Generation (The "RAG" Loop)
+1.  **Query Embedding**: User query is converted to a vector using the same model.
+2.  **Similarity Search**:
+    *   Metric: Cosine Similarity (via `pgvector` or `Qdrant`).
+    *   Top-K: Retrieves the top 5 most relevant distinct chunks.
+3.  **Prompt Engineering**:
+    *   System constructs a prompt containing: "Context: [Retrieved Chunks] + Question: [User Query]".
+    *   Instruction: "Answer based ONLY on the context provided."
+4.  **Generation**:
+    *   Model: `Gemini 2.5 Flash` (or configured model).
+    *   Output: Streaming text response.
+
+#### Query Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant API as FASTAPI
+    participant V as VectorDB
+    participant L as LLM (Gemini)
+    
+    U->>API: POST /query "Summarize the intro"
+    
+    Note over API: 1. Generate Query Embedding
+    API->>L: Embed("Summarize the intro")
+    L-->>API: Vector[0.12, -0.4, ...]
+    
+    Note over API: 2. Semantic Search
+    API->>V: Search(Vector, Limit=5)
+    V-->>API: Returns [Chunk A, Chunk B, Chunk C]
+    
+    Note over API: 3. Construct Context Prompt
+    API->>L: Generate(Context + Question)
+    L-->>API: "The introduction covers..."
+    
+    API->>U: Final Answer
+```
+
+---
+
+## 💻 Tech Stack
+
+| Component | Technology | Description |
+|-----------|------------|-------------|
+| **Backend Framework** | **FastAPI** | High-performance async Python framework. |
+| **LLM Provider** | **Google Gemini** | Using `gemini-2.0-flash` (configurable) for reasoning. |
+| **Embeddings** | **Titan/Gemini** | `gemini-embedding-001` for vector representation. |
+| **Vector Database** | **PostgreSQL (pgvector)** | Relational + Vector data in one place. Optional Qdrant support. |
+| **ORM** | **SQLAlchemy** | Async ORM for database interactions. |
+| **Task Queue** | **AsyncIO** | Python's native async/await for non-blocking operations. |
+| **Frontend** | **Vanilla JS/CSS** | Lightweight, clean UI without complex build steps. |
+
+---
+
+## 📦 Installation & Setup
+
+### Prerequisites
+*   Python 3.8+
+*   PostgreSQL 14+ (with `vector` extension installed)
+*   A Google Cloud API Key (for Gemini)
+
+### Quick Start (Windows)
+The project includes automated scripts for instant setup.
+
+1.  **Clone & Setup**:
+    ```powershell
+    git clone https://github.com/ZozElwakil/RAGMind---EELU-Project.git
+    cd RAGMind---EELU-Project
+    .\setup.bat
+    ```
+    *This script creates the virtual environment, installs requirements, and sets up the .env file.*
+
+2.  **Environment Config**:
+    Open `.env` and paste your keys:
+    ```env
+    DATABASE_URL=postgresql+asyncpg://postgres:password@localhost/ragmind
+    GEMINI_API_KEY=AIzaSy...
+    ```
+
+3.  **Initialize DB**:
+    ```powershell
+    python -m backend.init_database
+    ```
+
+4.  **Run**:
+    ```powershell
+    .\start_backend.bat
+    ```
+
+Visit **http://localhost:8000** to use the application.
+
+---
+
+## 📂 Project Structure
+
+```bash
+RAGMind/
+├── backend/
+│   ├── services/          # Business logic (RAG, Chunking, Parsing)
+│   ├── providers/         # Interfaces for LLMs and VectorDBs
+│   ├── routes/            # API Endpoints
+│   ├── database/          # SQLAlchemy models and connection
+│   └── main.py            # App entry point
+├── frontend/              # Web UI (HTML/JS/CSS)
+├── telegram_bot/          # Telegram Bot integration code
+├── uploads/               # Temporary storage for documents
+└── scripts/               # .bat helper scripts
+```
+
+---
+
+## 👥 Contributors
+
+*   **Abdulmoezz Elwakil** ([@ZozElwakil](https://github.com/ZozElwakil)) - Core Logic & Architecture
+
+## 📄 License
+This project is licensed under the **MIT License**.
