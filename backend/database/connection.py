@@ -3,7 +3,6 @@ Database connection management with async SQLAlchemy.
 Provides engine and session factory.
 """
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import NullPool
 from backend.config import settings
 import logging
 
@@ -12,9 +11,13 @@ logger = logging.getLogger(__name__)
 # Create async engine
 engine = create_async_engine(
     settings.database_url,
-    echo=False,  # Set to True for SQL query logging
-    poolclass=NullPool,  # Use NullPool for async or configure pool
-    future=True
+    echo=False,
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_timeout=30,
+    future=True,
 )
 
 # Create async session factory

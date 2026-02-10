@@ -4,7 +4,9 @@ Uses Qdrant standalone vector database.
 """
 from typing import List, Dict, Any, Optional, Tuple
 from backend.providers.vectordb.interface import VectorDBInterface
+from backend.config import settings
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +34,12 @@ class QdrantProvider(VectorDBInterface):
                 self.client = QdrantClient(path=path)
                 logger.info(f"Qdrant provider initialized with local path: {path}")
             else:
-                self.client = QdrantClient(url=url, api_key=api_key if api_key else None)
+                self.client = QdrantClient(
+                    url=url,
+                    api_key=api_key if api_key else None,
+                    timeout=60,
+                    prefer_grpc=False,
+                )
                 logger.info(f"Qdrant provider initialized at {url}")
         except ImportError:
             logger.error("qdrant-client not installed. Install with: pip install qdrant-client")
@@ -55,18 +62,34 @@ class QdrantProvider(VectorDBInterface):
             True if successful
         """
         try:
+            from qdrant_client.models import Distance, VectorParams
+
             # Check if collection exists
-            collections = self.client.get_collections().collections
+            result = await asyncio.to_thread(self.client.get_collections)
+            collections = result.collections
             exists = any(c.name == collection_name for c in collections)
             
             if not exists:
-                self.client.create_collection(
+                await asyncio.to_thread(
+                    self.client.create_collection,
                     collection_name=collection_name,
-                    vectors_config=self.VectorParams(
+                    vectors_config=VectorParams(
                         size=dimension,
-                        distance=self.Distance.COSINE
+                        distance=Distance.COSINE
                     )
                 )
+                # Create payload indexes for faster filtered search
+                try:
+                    from qdrant_client.models import PayloadSchemaType
+                    for field in ("project_id", "asset_id"):
+                        await asyncio.to_thread(
+                            self.client.create_payload_index,
+                            collection_name=collection_name,
+                            field_name=field,
+                            field_schema=PayloadSchemaType.INTEGER,
+                        )
+                except Exception as idx_err:
+                    logger.warning(f"Could not create payload index: {idx_err}")
                 logger.info(f"Created Qdrant collection '{collection_name}'")
             else:
                 logger.info(f"Qdrant collection '{collection_name}' already exists")
@@ -98,21 +121,45 @@ class QdrantProvider(VectorDBInterface):
             True if successful
         """
         try:
+            if vectors:
+                exists = await self.collection_exists(collection_name)
+                if not exists:
+                    await self.create_collection(collection_name, dimension=len(vectors[0]))
+
+            from qdrant_client.models import PointStruct
+
             points = []
             for i, (point_id, vector) in enumerate(zip(ids, vectors)):
                 payload = metadata[i] if metadata and i < len(metadata) else {}
                 points.append(
-                    self.PointStruct(
+                    PointStruct(
                         id=point_id,
                         vector=vector,
                         payload=payload
                     )
                 )
             
-            self.client.upsert(
-                collection_name=collection_name,
-                points=points
-            )
+            batch_size = max(1, int(settings.qdrant_upsert_batch_size))
+            for start in range(0, len(points), batch_size):
+                batch = points[start:start + batch_size]
+                for attempt in range(3):
+                    try:
+                        await asyncio.to_thread(
+                            self.client.upsert,
+                            collection_name=collection_name,
+                            points=batch
+                        )
+                        break
+                    except Exception as e:
+                        if attempt == 2:
+                            raise
+                        logger.warning(
+                            "Qdrant upsert failed, retrying batch %s-%s (%s)",
+                            start,
+                            start + len(batch) - 1,
+                            str(e)
+                        )
+                        await asyncio.sleep(0.5 * (attempt + 1))
             
             logger.info(f"Added {len(points)} points to Qdrant collection '{collection_name}'")
             return True
@@ -154,16 +201,45 @@ class QdrantProvider(VectorDBInterface):
                 search_filter = Filter(must=conditions)
             
             # Search
-            search_result = self.client.search(
-                collection_name=collection_name,
-                query_vector=query_vector,
-                limit=top_k,
-                query_filter=search_filter
-            )
+            payload_fields = ["content", "metadata", "asset_id", "project_id"]
+
+            if hasattr(self.client, "query_points"):
+                search_result = await asyncio.to_thread(
+                    lambda: self.client.query_points(
+                        collection_name=collection_name,
+                        query=query_vector,
+                        limit=top_k,
+                        query_filter=search_filter,
+                        with_payload=payload_fields
+                    )
+                )
+            elif hasattr(self.client, "search_points"):
+                search_result = await asyncio.to_thread(
+                    lambda: self.client.search_points(
+                        collection_name=collection_name,
+                        query_vector=query_vector,
+                        limit=top_k,
+                        query_filter=search_filter,
+                        with_payload=payload_fields
+                    )
+                )
+            elif hasattr(self.client, "search"):
+                search_result = await asyncio.to_thread(
+                    lambda: self.client.search(
+                        collection_name=collection_name,
+                        query_vector=query_vector,
+                        limit=top_k,
+                        query_filter=search_filter,
+                        with_payload=payload_fields
+                    )
+                )
+            else:
+                raise AttributeError("Qdrant client does not support query/search")
             
             # Format results
             results = []
-            for hit in search_result:
+            hits = getattr(search_result, "points", search_result)
+            for hit in hits:
                 results.append((
                     hit.id,
                     hit.score,
@@ -192,7 +268,7 @@ class QdrantProvider(VectorDBInterface):
             True if successful
         """
         try:
-            self.client.delete_collection(collection_name=collection_name)
+            await asyncio.to_thread(self.client.delete_collection, collection_name=collection_name)
             logger.info(f"Deleted Qdrant collection '{collection_name}'")
             return True
             
@@ -215,8 +291,8 @@ class QdrantProvider(VectorDBInterface):
             True if exists
         """
         try:
-            collections = self.client.get_collections().collections
-            return any(c.name == collection_name for c in collections)
+            result = await asyncio.to_thread(self.client.get_collections)
+            return any(c.name == collection_name for c in result.collections)
             
         except Exception as e:
             logger.error(f"Error checking collection: {str(e)}")

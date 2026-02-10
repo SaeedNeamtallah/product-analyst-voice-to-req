@@ -5,11 +5,11 @@ Business logic for document upload and processing.
 from typing import Optional, List
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.attributes import flag_modified
 from backend.database.models import Asset, Chunk, Project
 from backend.services.file_service import FileService
-from backend.services.document_loader import DocumentLoaderService
-from backend.services.chunking_service import ChunkingService
-from backend.services.embedding_service import EmbeddingService
+from backend.runtime_config import get_runtime_value
+from backend.config import settings
 from backend.providers.vectordb.factory import VectorDBProviderFactory
 from datetime import datetime
 import logging
@@ -23,6 +23,11 @@ class DocumentController:
     def __init__(self):
         """Initialize document controller."""
         self.file_service = FileService()
+        # Lazy imports keep startup fast and avoid circular-import pitfalls.
+        from backend.services.document_loader import DocumentLoaderService
+        from backend.services.chunking_service import ChunkingService
+        from backend.services.embedding_service import EmbeddingService
+
         self.document_loader = DocumentLoaderService()
         self.chunking_service = ChunkingService()
         self.embedding_service = EmbeddingService()
@@ -99,21 +104,18 @@ class DocumentController:
             logger.error(f"Error uploading document: {str(e)}")
             raise
     
-    async def process_document(
+    async def process_document(self, asset_id: int, **_kw) -> bool:
+        """Process document with a dedicated DB session (background-task safe)."""
+        from backend.database.connection import async_session_maker
+        async with async_session_maker() as db:
+            return await self._process_document_impl(db, asset_id)
+
+    async def _process_document_impl(
         self,
         db: AsyncSession,
         asset_id: int
     ) -> bool:
-        """
-        Process document: extract, chunk, embed, and store.
-        
-        Args:
-            db: Database session
-            asset_id: Asset ID
-            
-        Returns:
-            True if successful
-        """
+        """Extract, chunk, embed, and store document vectors."""
         try:
             # Get asset
             asset_stmt = select(Asset).where(Asset.id == asset_id)
@@ -134,50 +136,124 @@ class DocumentController:
                 
                 # Chunk text
                 logger.info(f"Chunking text ({len(text)} characters)")
-                chunks_data = await self.chunking_service.chunk_document(
+                await self._update_asset_progress(
+                    db,
+                    asset,
+                    stage="chunking",
+                    processed=0,
+                    total=0,
+                    progress=0
+                )
+                chunk_strategy = get_runtime_value("chunk_strategy", settings.chunk_strategy)
+                chunk_size = get_runtime_value("chunk_size", settings.chunk_size)
+                chunk_overlap = get_runtime_value("chunk_overlap", settings.chunk_overlap)
+                parent_chunk_size = get_runtime_value("parent_chunk_size", settings.parent_chunk_size)
+                parent_chunk_overlap = get_runtime_value("parent_chunk_overlap", settings.parent_chunk_overlap)
+
+                chunking_service = self.chunking_service
+                if any(value is not None for value in [chunk_size, chunk_overlap, parent_chunk_size, parent_chunk_overlap]):
+                    from backend.services.chunking_service import ChunkingService
+                    chunking_service = ChunkingService(
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                        parent_chunk_size=parent_chunk_size,
+                        parent_chunk_overlap=parent_chunk_overlap
+                    )
+
+                chunks_data = await chunking_service.chunk_document(
                     text=text,
                     document_name=asset.original_filename,
                     additional_metadata={
                         'file_type': asset.file_type,
                         'asset_id': asset.id
-                    }
+                    },
+                    chunk_strategy=chunk_strategy
                 )
                 
                 # Create chunk records
                 chunk_records = []
                 for i, chunk_data in enumerate(chunks_data):
-                    chunk = Chunk(
-                        project_id=asset.project_id,
-                        asset_id=asset.id,
-                        content=chunk_data['content'],
-                        chunk_index=i,
-                        extra_metadata=chunk_data['metadata']
+                    chunk_records.append(
+                        Chunk(
+                            project_id=asset.project_id,
+                            asset_id=asset.id,
+                            content=chunk_data['content'],
+                            chunk_index=i,
+                            extra_metadata=chunk_data['metadata']
+                        )
                     )
-                    db.add(chunk)
-                    chunk_records.append(chunk)
-                
-                await db.commit()
-                
-                # Refresh to get IDs
-                for chunk in chunk_records:
-                    await db.refresh(chunk)
+
+                db.add_all(chunk_records)
+                await db.flush()
+
+                total_chunks = len(chunk_records)
+                await self._update_asset_progress(
+                    db,
+                    asset,
+                    stage="embedding",
+                    processed=0,
+                    total=total_chunks,
+                    progress=0
+                )
                 
                 # Generate embeddings
                 logger.info(f"Generating embeddings for {len(chunk_records)} chunks")
                 texts = [chunk.content for chunk in chunk_records]
-                embeddings = await self.embedding_service.generate_embeddings(texts)
+
+                async def on_embed_batch(processed: int, total: int) -> None:
+                    progress = int((processed / max(total, 1)) * 100)
+                    await self._update_asset_progress(
+                        db,
+                        asset,
+                        stage="embedding",
+                        processed=processed,
+                        total=total,
+                        progress=progress
+                    )
+
+                embeddings = await self.embedding_service.generate_embeddings(
+                    texts,
+                    on_batch=on_embed_batch
+                )
                 
                 # Store embeddings in chunks and vector DB
                 chunk_ids = [chunk.id for chunk in chunk_records]
-                await self.vector_db.add_vectors(
+                vector_metadata = [
+                    {
+                        'asset_id': chunk.asset_id,
+                        'project_id': chunk.project_id,
+                        'chunk_index': chunk.chunk_index
+                    }
+                    for chunk in chunk_records
+                ]
+                await self._update_asset_progress(
+                    db,
+                    asset,
+                    stage="indexing",
+                    processed=total_chunks,
+                    total=total_chunks,
+                    progress=95
+                )
+
+                vector_db = VectorDBProviderFactory.create_provider()
+                await vector_db.add_vectors(
                     collection_name=f"project_{asset.project_id}",
                     vectors=embeddings,
-                    ids=chunk_ids
+                    ids=chunk_ids,
+                    metadata=vector_metadata
                 )
                 
                 # Update asset status
                 asset.status = "completed"
                 asset.processed_at = datetime.utcnow()
+                await self._update_asset_progress(
+                    db,
+                    asset,
+                    stage="completed",
+                    processed=total_chunks,
+                    total=total_chunks,
+                    progress=100
+                )
                 await db.commit()
                 
                 logger.info(f"Completed processing document: {asset.id}")
@@ -193,6 +269,26 @@ class DocumentController:
         except Exception as e:
             logger.error(f"Error processing document: {str(e)}")
             raise
+
+    async def _update_asset_progress(
+        self,
+        db: AsyncSession,
+        asset: Asset,
+        stage: str,
+        processed: int,
+        total: int,
+        progress: int
+    ) -> None:
+        meta = dict(asset.extra_metadata or {})
+        meta.update({
+            "stage": stage,
+            "processed_chunks": int(processed),
+            "total_chunks": int(total),
+            "progress": int(progress)
+        })
+        asset.extra_metadata = meta
+        flag_modified(asset, "extra_metadata")
+        await db.commit()
     
     async def get_document(
         self,

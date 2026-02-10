@@ -2,7 +2,7 @@
 Database models using SQLAlchemy async ORM.
 Defines tables for projects, assets, and chunks with vector embeddings.
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON, LargeBinary
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float, JSON, LargeBinary, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -61,7 +61,11 @@ class Asset(Base):
     # Relationships
     project = relationship("Project", back_populates="assets")
     chunks = relationship("Chunk", back_populates="asset", cascade="all, delete-orphan")
-    
+
+    __table_args__ = (
+        Index('ix_assets_project_status', 'project_id', 'status'),
+    )
+
     def __repr__(self):
         return f"<Asset(id={self.id}, filename='{self.filename}', status='{self.status}')>"
 
@@ -91,6 +95,11 @@ class Chunk(Base):
     # Relationships
     project = relationship("Project", back_populates="chunks")
     asset = relationship("Asset", back_populates="chunks")
-    
+
+    __table_args__ = (
+        Index('ix_chunks_project_asset', 'project_id', 'asset_id'),
+        Index('ix_chunks_asset_idx', 'asset_id', 'chunk_index'),
+    )
+
     def __repr__(self):
         return f"<Chunk(id={self.id}, asset_id={self.asset_id}, chunk_index={self.chunk_index})>"

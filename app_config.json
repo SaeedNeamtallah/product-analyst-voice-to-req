@@ -1,0 +1,18 @@
+{
+  "llm_provider": "cerebras-gpt-oss-120b",
+  "embedding_provider": "cohere",
+  "retrieval_top_k": 20,
+  "chunk_strategy": "parent_child",
+  "chunk_size": 600,
+  "chunk_overlap": 100,
+  "parent_chunk_size": 4000,
+  "parent_chunk_overlap": 600,
+  "retrieval_candidate_k": 20,
+  "retrieval_hybrid_enabled": true,
+  "retrieval_hybrid_alpha": 0.7,
+  "retrieval_rerank_enabled": true,
+  "retrieval_rerank_top_k": 10,
+  "query_rewrite_enabled": true,
+  "vector_db_provider": "qdrant",
+  "voyage_output_dimension": 1024
+}

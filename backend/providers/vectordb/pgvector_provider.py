@@ -62,18 +62,16 @@ class PGVectorProvider(VectorDBInterface):
             True if successful
         """
         try:
+            from sqlalchemy import update as sa_update
             async with async_session_maker() as session:
                 for i, (chunk_id, vector) in enumerate(zip(ids, vectors)):
-                    # Update chunk with embedding
-                    stmt = select(Chunk).where(Chunk.id == chunk_id)
-                    result = await session.execute(stmt)
-                    chunk = result.scalar_one_or_none()
-                    
-                    if chunk:
-                        chunk.embedding = vector
-                        if metadata and i < len(metadata):
-                            chunk.extra_metadata.update(metadata[i])
-                
+                    await session.execute(
+                        sa_update(Chunk)
+                        .where(Chunk.id == chunk_id)
+                        .values(embedding=vector)
+                    )
+                    if (i + 1) % 500 == 0:
+                        await session.flush()
                 await session.commit()
                 logger.info(f"Added {len(vectors)} vectors to collection '{collection_name}'")
                 return True
@@ -117,34 +115,48 @@ class PGVectorProvider(VectorDBInterface):
                 
                 result = await session.execute(query)
                 rows = result.all()
-                
-                # Calculate similarity in Python
-                def cosine_similarity(v1, v2):
-                    if not v1 or not v2: return 0.0
-                    dot_product = sum(a * b for a, b in zip(v1, v2))
-                    norm1 = sum(a * a for a in v1) ** 0.5
-                    norm2 = sum(a * a for a in v2) ** 0.5
-                    if not norm1 or not norm2: return 0.0
-                    return dot_product / (norm1 * norm2)
-                
-                scored_results = []
-                for row in rows:
-                    sim = cosine_similarity(query_vector, row.embedding)
-                    scored_results.append((
-                        row.id,
-                        sim,
+
+                if not rows:
+                    return []
+
+                # Vectorised cosine similarity via numpy (offloaded to thread)
+                import numpy as np
+                import asyncio as _aio
+
+                row_ids = [r.id for r in rows]
+                row_contents = [r.content for r in rows]
+                row_metas = [r.extra_metadata for r in rows]
+                row_assets = [r.asset_id for r in rows]
+                row_vecs = [r.embedding for r in rows]
+
+                def _rank():
+                    q = np.asarray(query_vector, dtype=np.float32)
+                    m = np.asarray(row_vecs, dtype=np.float32)
+                    dots = m @ q
+                    norms = np.linalg.norm(m, axis=1) * np.linalg.norm(q)
+                    norms[norms == 0] = 1.0
+                    sims = dots / norms
+                    k = min(top_k, len(sims))
+                    top_idx = np.argpartition(sims, -k)[-k:]
+                    top_idx = top_idx[np.argsort(sims[top_idx])[::-1]]
+                    return [(int(i), float(sims[i])) for i in top_idx]
+
+                ranked = await _aio.to_thread(_rank)
+
+                results = [
+                    (
+                        row_ids[i],
+                        score,
                         {
-                            'content': row.content,
-                            'metadata': row.extra_metadata,
-                            'asset_id': row.asset_id
+                            'content': row_contents[i],
+                            'metadata': row_metas[i],
+                            'asset_id': row_assets[i],
                         }
-                    ))
-                
-                # Sort by similarity and take top_k
-                scored_results.sort(key=lambda x: x[1], reverse=True)
-                results = scored_results[:top_k]
-                
-                logger.info(f"Found {len(results)} similar chunks using Python fallback")
+                    )
+                    for i, score in ranked
+                ]
+
+                logger.info(f"Found {len(results)} similar chunks (numpy cosine)")
                 return results
                 
         except Exception as e:

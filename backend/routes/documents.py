@@ -11,7 +11,14 @@ from backend.database import get_db
 from backend.controllers.document_controller import DocumentController
 
 router = APIRouter(tags=["Documents"])
-document_controller = DocumentController()
+_document_controller = None
+
+
+def get_document_controller() -> DocumentController:
+    global _document_controller
+    if _document_controller is None:
+        _document_controller = DocumentController()
+    return _document_controller
 
 
 # Response Models
@@ -50,6 +57,7 @@ async def upload_document(
         file_size = len(file_content)
         
         # Upload document
+        document_controller = get_document_controller()
         asset = await document_controller.upload_document(
             db=db,
             project_id=project_id,
@@ -61,7 +69,6 @@ async def upload_document(
         # Process in background
         background_tasks.add_task(
             document_controller.process_document,
-            db=db,
             asset_id=asset.id
         )
         
@@ -80,6 +87,7 @@ async def list_project_documents(
 ):
     """List all documents in project."""
     try:
+        document_controller = get_document_controller()
         documents = await document_controller.list_project_documents(
             db=db,
             project_id=project_id
@@ -96,6 +104,7 @@ async def get_document(
 ):
     """Get document by ID."""
     try:
+        document_controller = get_document_controller()
         document = await document_controller.get_document(db=db, asset_id=asset_id)
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
@@ -113,7 +122,8 @@ async def process_document(
 ):
     """Manually trigger document processing."""
     try:
-        await document_controller.process_document(db=db, asset_id=asset_id)
+        document_controller = get_document_controller()
+        await document_controller.process_document(asset_id=asset_id)
         document = await document_controller.get_document(db=db, asset_id=asset_id)
         return document
     except ValueError as e:
@@ -129,6 +139,7 @@ async def delete_document(
 ):
     """Delete document."""
     try:
+        document_controller = get_document_controller()
         deleted = await document_controller.delete_document(db=db, asset_id=asset_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Document not found")

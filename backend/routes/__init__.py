@@ -1,4 +1,14 @@
-"""Routes package initialization."""
-from backend.routes import projects, documents, query, health
+"""Routes package initialization.
 
-__all__ = ["projects", "documents", "query", "health"]
+Keep this module import-light to avoid side effects and circular imports.
+"""
+
+__all__ = [
+    "bot_config",
+    "documents",
+    "health",
+    "projects",
+    "query",
+    "stats",
+    "app_config",
+]

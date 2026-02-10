@@ -11,7 +11,9 @@ docker ps 2>nul | findstr "ragmind-postgres" >nul
 if errorlevel 1 (
     echo [WARNING] Database container is not running!
     echo Starting Docker services...
-    docker-compose up -d
+    set SKIP_DOCKER_PAUSE=1
+    call start_docker.bat
+    set SKIP_DOCKER_PAUSE=
     if errorlevel 1 (
         echo [ERROR] Failed to start Docker services!
         echo Please run start_docker.bat first or start Docker Desktop.
@@ -57,7 +59,11 @@ echo.
 
 REM Start server
 echo Starting FastAPI server...
-echo Server will be available at: http://localhost:8000
-echo API docs at: http://localhost:8000/docs
+echo Server will be available at: http://127.0.0.1:8000
+echo API docs at: http://127.0.0.1:8000/docs
 echo.
-python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+echo Starting frontend server at: http://localhost:8080
+start "" cmd /c "cd /d %~dp0frontend && python -m http.server 8080"
+echo Opening frontend in your browser...
+start "" "http://localhost:8080"
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000

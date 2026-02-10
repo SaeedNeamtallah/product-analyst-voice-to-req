@@ -14,22 +14,13 @@ router = APIRouter(prefix="/stats", tags=["Stats"])
 async def get_global_stats(db: AsyncSession = Depends(get_db)):
     """Get global statistics."""
     try:
-        # Count projects
-        projects_query = select(func.count(Project.id))
-        projects_count = await db.scalar(projects_query)
-        
-        # Count documents
-        documents_query = select(func.count(Asset.id))
-        documents_count = await db.scalar(documents_query)
-        
-        # Count chunks
-        chunks_query = select(func.count(Chunk.id))
-        chunks_count = await db.scalar(chunks_query)
-        
-        return {
-            "projects": projects_count or 0,
-            "documents": documents_count or 0,
-            "chunks": chunks_count or 0
-        }
+        row = (await db.execute(
+            select(
+                select(func.count(Project.id)).scalar_subquery().label('p'),
+                select(func.count(Asset.id)).scalar_subquery().label('d'),
+                select(func.count(Chunk.id)).scalar_subquery().label('c'),
+            )
+        )).one()
+        return {"projects": row.p or 0, "documents": row.d or 0, "chunks": row.c or 0}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

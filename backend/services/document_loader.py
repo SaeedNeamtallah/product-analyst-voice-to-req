@@ -51,20 +51,24 @@ class DocumentLoaderService:
         """
         try:
             from pypdf import PdfReader
-            
-            reader = PdfReader(file_path)
-            text_parts = []
-            
-            for page_num, page in enumerate(reader.pages, 1):
-                text = page.extract_text()
-                if text.strip():
-                    text_parts.append(text)
-            
-            full_text = "\n\n".join(text_parts)
-            logger.info(f"Extracted {len(full_text)} characters from PDF ({len(reader.pages)} pages)")
-            
+            import asyncio
+
+            def extract_text() -> tuple[str, int]:
+                reader = PdfReader(file_path)
+                text_parts = []
+
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text and text.strip():
+                        text_parts.append(text)
+
+                return "\n\n".join(text_parts), len(reader.pages)
+
+            full_text, page_count = await asyncio.to_thread(extract_text)
+            logger.info(f"Extracted {len(full_text)} characters from PDF ({page_count} pages)")
+
             return full_text
-            
+
         except Exception as e:
             logger.error(f"Error loading PDF: {str(e)}")
             raise
@@ -81,8 +85,9 @@ class DocumentLoaderService:
             File content
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                text = f.read()
+            import aiofiles
+            async with aiofiles.open(file_path, 'r', encoding='utf-8') as f:
+                text = await f.read()
             
             logger.info(f"Loaded {len(text)} characters from TXT file")
             return text
@@ -90,8 +95,9 @@ class DocumentLoaderService:
         except UnicodeDecodeError:
             # Try with different encoding
             try:
-                with open(file_path, 'r', encoding='latin-1') as f:
-                    text = f.read()
+                import aiofiles as _af
+                async with _af.open(file_path, 'r', encoding='latin-1') as f:
+                    text = await f.read()
                 logger.info(f"Loaded {len(text)} characters from TXT file (latin-1 encoding)")
                 return text
             except Exception as e:
@@ -114,16 +120,18 @@ class DocumentLoaderService:
         """
         try:
             from docx import Document
-            
-            doc = Document(file_path)
-            text_parts = []
-            
-            for para in doc.paragraphs:
-                if para.text.strip():
-                    text_parts.append(para.text)
-            
-            full_text = "\n\n".join(text_parts)
-            logger.info(f"Extracted {len(full_text)} characters from DOCX ({len(doc.paragraphs)} paragraphs)")
+            import asyncio
+
+            def _extract_docx():
+                doc = Document(file_path)
+                text_parts = []
+                for para in doc.paragraphs:
+                    if para.text.strip():
+                        text_parts.append(para.text)
+                return "\n\n".join(text_parts), len(doc.paragraphs)
+
+            full_text, para_count = await asyncio.to_thread(_extract_docx)
+            logger.info(f"Extracted {len(full_text)} characters from DOCX ({para_count} paragraphs)")
             
             return full_text
             

@@ -11,7 +11,14 @@ from backend.database import get_db
 from backend.controllers.project_controller import ProjectController
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
-project_controller = ProjectController()
+_project_controller = None
+
+
+def get_project_controller() -> ProjectController:
+    global _project_controller
+    if _project_controller is None:
+        _project_controller = ProjectController()
+    return _project_controller
 
 
 # Request/Response Models
@@ -52,6 +59,7 @@ async def create_project(
 ):
     """Create a new project."""
     try:
+        project_controller = get_project_controller()
         project = await project_controller.create_project(
             db=db,
             name=project_data.name,
@@ -71,6 +79,7 @@ async def list_projects(
 ):
     """List all projects."""
     try:
+        project_controller = get_project_controller()
         projects = await project_controller.list_projects(db=db, skip=skip, limit=limit)
         return projects
     except Exception as e:
@@ -84,6 +93,7 @@ async def get_project(
 ):
     """Get project by ID."""
     try:
+        project_controller = get_project_controller()
         project = await project_controller.get_project(db=db, project_id=project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -101,6 +111,7 @@ async def get_project_stats(
 ):
     """Get project statistics."""
     try:
+        project_controller = get_project_controller()
         project = await project_controller.get_project(db=db, project_id=project_id)
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -125,6 +136,7 @@ async def update_project(
 ):
     """Update project."""
     try:
+        project_controller = get_project_controller()
         project = await project_controller.update_project(
             db=db,
             project_id=project_id,
@@ -148,6 +160,7 @@ async def delete_project(
 ):
     """Delete project and all associated data."""
     try:
+        project_controller = get_project_controller()
         deleted = await project_controller.delete_project(db=db, project_id=project_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Project not found")

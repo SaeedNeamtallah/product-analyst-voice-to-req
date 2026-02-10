@@ -1,6 +1,6 @@
-"""Controllers package initialization."""
-from backend.controllers.project_controller import ProjectController
-from backend.controllers.document_controller import DocumentController
-from backend.controllers.query_controller import QueryController
+"""Controllers package initialization.
 
-__all__ = ["ProjectController", "DocumentController", "QueryController"]
+Keep this module import-light to avoid side effects and circular imports.
+"""
+
+__all__ = []

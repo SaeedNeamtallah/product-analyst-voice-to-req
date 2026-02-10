@@ -6,6 +6,7 @@ from backend.providers.vectordb.interface import VectorDBInterface
 from backend.providers.vectordb.pgvector_provider import PGVectorProvider
 from backend.providers.vectordb.qdrant_provider import QdrantProvider
 from backend.config import settings
+from backend.runtime_config import get_runtime_value
 import logging
 
 logger = logging.getLogger(__name__)
@@ -31,7 +32,7 @@ class VectorDBProviderFactory:
         Raises:
             ValueError: If provider name is not supported
         """
-        provider_name = provider_name or settings.vector_db_provider
+        provider_name = provider_name or get_runtime_value("vector_db_provider", settings.vector_db_provider)
         provider_name = provider_name.lower()
         
         if provider_name in cls._instances:

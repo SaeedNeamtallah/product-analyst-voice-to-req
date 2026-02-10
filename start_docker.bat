@@ -52,4 +52,6 @@ echo.
 echo To stop services: stop_docker.bat
 echo To view logs: docker-compose logs -f
 echo.
-pause
+if not defined SKIP_DOCKER_PAUSE (
+    pause
+)

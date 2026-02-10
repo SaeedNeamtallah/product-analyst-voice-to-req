@@ -3,7 +3,7 @@ Abstract LLM Provider Interface.
 Defines the contract that all LLM providers must implement.
 """
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncIterator
 
 
 class LLMInterface(ABC):
@@ -32,6 +32,29 @@ class LLMInterface(ABC):
             Generated text response
         """
         pass
+
+    async def generate_text_stream(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> AsyncIterator[str]:
+        """
+        Stream text completion token by token.
+
+        Default implementation falls back to non-streaming generate_text
+        and yields the whole response at once.
+        """
+        full = await self.generate_text(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
+        yield full
     
     @abstractmethod
     async def generate_embeddings(

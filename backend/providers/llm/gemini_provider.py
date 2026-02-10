@@ -2,7 +2,7 @@
 Google Gemini 2.5 Flash LLM Provider Implementation.
 Uses google-generativeai SDK for text generation and embeddings.
 """
-from typing import List, Optional
+from typing import List, Optional, AsyncIterator
 import google.generativeai as genai
 from backend.providers.llm.interface import LLMInterface
 from backend.config import settings
@@ -24,15 +24,26 @@ class GeminiProvider(LLMInterface):
             model_name: Model name (defaults to settings)
         """
         self.api_key = api_key or settings.gemini_api_key
-        self.model_name = model_name or settings.gemini_model
-        
+        # Support both flash and lite-flash
+        if model_name:
+            self.model_name = model_name
+        else:
+            import backend.runtime_config as rc
+            runtime_model = rc.get_runtime_value("gemini_model")
+            if runtime_model:
+                self.model_name = runtime_model
+            else:
+                # Use special model if provider is gemini-2.5-lite-flash
+                provider = rc.get_runtime_value("llm_provider", settings.llm_provider)
+                if provider == "gemini-2.5-lite-flash":
+                    self.model_name = getattr(settings, "gemini_lite_model", "gemini-2.5-lite-flash")
+                else:
+                    self.model_name = settings.gemini_model
         # Configure Gemini
         genai.configure(api_key=self.api_key)
-        
         # Initialize models
         self.chat_model = genai.GenerativeModel(self.model_name)
-        self.embedding_model = "models/gemini-embedding-001"
-        
+        self.embedding_model = settings.gemini_embed_model
         logger.info(f"Gemini provider initialized with model: {self.model_name}")
     
     async def generate_text(
@@ -81,6 +92,44 @@ class GeminiProvider(LLMInterface):
             
         except Exception as e:
             logger.error(f"Error generating text with Gemini: {str(e)}")
+            raise
+
+    async def generate_text_stream(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> AsyncIterator[str]:
+        """Stream text token-by-token using Gemini SDK."""
+        try:
+            full_prompt = prompt
+            if system_prompt:
+                full_prompt = f"{system_prompt}\n\n{prompt}"
+
+            generation_config = genai.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens or 2048,
+            )
+
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: self.chat_model.generate_content(
+                    full_prompt,
+                    generation_config=generation_config,
+                    stream=True,
+                ),
+            )
+
+            for chunk in response:
+                text = getattr(chunk, "text", None)
+                if text:
+                    yield text
+
+        except Exception as e:
+            logger.error(f"Error streaming text with Gemini: {str(e)}")
             raise
     
     async def generate_embeddings(
