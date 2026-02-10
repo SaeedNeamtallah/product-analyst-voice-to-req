@@ -42,6 +42,9 @@ venv.bak/
 .env.local
 .env.*.local
 
+# Local history snapshots
+.history/
+
 # Database
 *.db
 *.sqlite
