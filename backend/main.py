@@ -23,7 +23,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from backend.database import init_db, close_db
-from backend.routes import projects, documents, query, health, stats, bot_config, app_config
+from backend.routes import projects, documents, query, health, stats, bot_config, app_config, stt, srs, messages, interview
+from backend.routes import auth
+from backend.routes import handoff
 
 
 @asynccontextmanager
@@ -86,12 +88,18 @@ app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Include routers
 app.include_router(health.router)
+app.include_router(auth.router)
 app.include_router(projects.router)
 app.include_router(documents.router)
 app.include_router(query.router)
 app.include_router(stats.router)
 app.include_router(bot_config.router)
 app.include_router(app_config.router)
+app.include_router(stt.router)
+app.include_router(srs.router)
+app.include_router(messages.router)
+app.include_router(interview.router)
+app.include_router(handoff.router)
 
 
 if __name__ == "__main__":

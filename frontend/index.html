@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&family=Inter:wght@300;400;600;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Space+Grotesk:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
@@ -18,8 +18,60 @@
     <link rel="stylesheet" href="style.css">
 </head>
 
-<body class="dark-theme">
-    <div class="app-container">
+<body class="light-theme">
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="auth-screen">
+        <div class="auth-card">
+            <div class="auth-logo">
+                <i class="fas fa-brain-circuit"></i>
+                <span>RAGMind</span>
+            </div>
+            <p class="auth-subtitle" id="auth-subtitle">سجّل دخولك للمتابعة</p>
+
+            <div id="auth-tabs" class="auth-tabs">
+                <button class="auth-tab active" data-tab="login">تسجيل الدخول</button>
+                <button class="auth-tab" data-tab="register">حساب جديد</button>
+            </div>
+
+            <!-- Login Form -->
+            <form id="login-form" class="auth-form" autocomplete="on">
+                <div class="form-group">
+                    <label data-i18n="book_email">البريد الإلكتروني</label>
+                    <input type="email" id="login-email" class="form-control" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label>كلمة المرور</label>
+                    <input type="password" id="login-password" class="form-control" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
+                </button>
+            </form>
+
+            <!-- Register Form -->
+            <form id="register-form" class="auth-form" style="display:none;" autocomplete="on">
+                <div class="form-group">
+                    <label data-i18n="book_name">الاسم</label>
+                    <input type="text" id="register-name" class="form-control" required autocomplete="name">
+                </div>
+                <div class="form-group">
+                    <label data-i18n="book_email">البريد الإلكتروني</label>
+                    <input type="email" id="register-email" class="form-control" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label>كلمة المرور</label>
+                    <input type="password" id="register-password" class="form-control" minlength="6" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-user-plus"></i> إنشاء حساب
+                </button>
+            </form>
+
+            <p id="auth-error" class="auth-error" style="display:none;"></p>
+        </div>
+    </div>
+
+    <div class="app-container" id="app-container" style="display:none;">
         <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
@@ -43,6 +95,10 @@
                         <i class="fas fa-comment-dots"></i>
                         <span data-i18n="nav_chat">المحادثة الذكية</span>
                     </li>
+                    <li data-view="srs">
+                        <i class="fas fa-file-signature"></i>
+                        <span data-i18n="nav_srs">مراجعة المتطلبات</span>
+                    </li>
                     <li data-view="bot-config">
                         <i class="fas fa-robot"></i>
                         <span data-i18n="nav_bot">إعدادات البوت</span>
@@ -56,12 +112,15 @@
 
             <div class="sidebar-footer">
                 <div class="user-info">
-                    <div class="avatar">A</div>
+                    <div class="avatar" id="user-avatar">A</div>
                     <div class="details">
-                        <p class="name">المستخدم</p>
+                        <p class="name" id="user-name">المستخدم</p>
                         <p class="status">متصل</p>
                     </div>
                 </div>
+                <button id="logout-btn" class="icon-btn" title="تسجيل خروج">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
                 <button id="lang-toggle" class="icon-btn" title="Switch Language">
                     <span class="lang-code">EN</span>
                 </button>
@@ -86,8 +145,8 @@
                 </div>
                 <div class="actions">
                     <button id="new-project-btn" class="btn btn-primary">
-                        <i class="fas fa-plus"></i>
-                        <span data-i18n="create_project_btn">مشروع جديد</span>
+                        <i class="fas fa-lightbulb"></i>
+                        <span data-i18n="start_idea_btn">ابدأ فكرة جديدة</span>
                     </button>
                 </div>
             </header>
@@ -178,6 +237,15 @@
                             <option value="ar">العربية</option>
                             <option value="en">English</option>
                         </select>
+                        <label class="chat-toggle">
+                            <input type="checkbox" id="chat-interview-toggle">
+                            <span class="chat-toggle-slider"></span>
+                            <span class="chat-toggle-label" data-i18n="interview_mode">وضع المقابلة</span>
+                        </label>
+                        <button id="chat-upload-ref-btn" class="chat-upload-ref-btn" title="Upload Reference Docs">
+                            <i class="fas fa-paperclip"></i>
+                            <span class="chat-upload-ref-label" data-i18n="upload_reference_docs">رفع مستندات</span>
+                        </button>
                     </div>
                     <button id="clear-chat-btn" class="chat-clear-btn" title="مسح المحادثة">
                         <i class="fas fa-trash-alt"></i>
@@ -186,17 +254,76 @@
             </div>
 
             <!-- Messages Area -->
-            <div class="chat-messages-pro" id="chat-messages">
-                <div class="welcome-msg-pro">
-                    <div class="welcome-icon">
-                        <i class="fas fa-robot"></i>
+            <div class="chat-body-wrapper">
+                <div class="chat-messages-pro" id="chat-messages">
+                    <div class="welcome-msg-pro">
+                        <div class="welcome-icon">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <h2>كيف يمكنني مساعدتك اليوم؟</h2>
+                        <p>اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.</p>
+                        <div class="welcome-suggestions">
+                            <button class="suggestion-chip">ما هو ملخص المستندات؟</button>
+                            <button class="suggestion-chip">اشرح لي المحتوى الرئيسي</button>
+                            <button class="suggestion-chip">ما هي النقاط المهمة؟</button>
+                        </div>
                     </div>
-                    <h2>كيف يمكنني مساعدتك اليوم؟</h2>
-                    <p>اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.</p>
-                    <div class="welcome-suggestions">
-                        <button class="suggestion-chip">ما هو ملخص المستندات؟</button>
-                        <button class="suggestion-chip">اشرح لي المحتوى الرئيسي</button>
-                        <button class="suggestion-chip">ما هي النقاط المهمة؟</button>
+                </div>
+
+                <!-- Live Document Panel (Co-pilot) -->
+                <aside class="live-doc-panel" id="live-doc-panel" style="display:none;">
+                    <div class="live-doc-header">
+                        <h3><i class="fas fa-file-lines"></i> <span data-i18n="live_doc_title">ملخص المتطلبات</span></h3>
+                        <button id="live-doc-close" class="live-doc-close" title="Close">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="live-doc-content" id="live-doc-content">
+                        <div class="live-doc-empty">
+                            <i class="fas fa-pencil-alt"></i>
+                            <p data-i18n="live_doc_empty">ابدأ المقابلة وسيتم تحديث الملخص تلقائياً...</p>
+                        </div>
+                    </div>
+                </aside>
+            </div>
+
+            <!-- Interview Coverage Indicators -->
+            <div class="interview-progress" id="interview-progress" style="display:none;">
+                <div class="interview-coverage-grid">
+                    <div class="coverage-item" data-area="discovery">
+                        <div class="coverage-label"><span data-i18n="stage_discovery">الاستكشاف</span></div>
+                        <div class="coverage-bar-track">
+                            <div class="coverage-bar-fill" id="coverage-discovery" style="width: 0%"></div>
+                        </div>
+                        <span class="coverage-pct" id="coverage-pct-discovery">0%</span>
+                    </div>
+                    <div class="coverage-item" data-area="scope">
+                        <div class="coverage-label"><span data-i18n="stage_scope">النطاق</span></div>
+                        <div class="coverage-bar-track">
+                            <div class="coverage-bar-fill" id="coverage-scope" style="width: 0%"></div>
+                        </div>
+                        <span class="coverage-pct" id="coverage-pct-scope">0%</span>
+                    </div>
+                    <div class="coverage-item" data-area="users">
+                        <div class="coverage-label"><span data-i18n="stage_users">المستخدمون</span></div>
+                        <div class="coverage-bar-track">
+                            <div class="coverage-bar-fill" id="coverage-users" style="width: 0%"></div>
+                        </div>
+                        <span class="coverage-pct" id="coverage-pct-users">0%</span>
+                    </div>
+                    <div class="coverage-item" data-area="features">
+                        <div class="coverage-label"><span data-i18n="stage_features">الميزات</span></div>
+                        <div class="coverage-bar-track">
+                            <div class="coverage-bar-fill" id="coverage-features" style="width: 0%"></div>
+                        </div>
+                        <span class="coverage-pct" id="coverage-pct-features">0%</span>
+                    </div>
+                    <div class="coverage-item" data-area="constraints">
+                        <div class="coverage-label"><span data-i18n="stage_constraints">القيود</span></div>
+                        <div class="coverage-bar-track">
+                            <div class="coverage-bar-fill" id="coverage-constraints" style="width: 0%"></div>
+                        </div>
+                        <span class="coverage-pct" id="coverage-pct-constraints">0%</span>
                     </div>
                 </div>
             </div>
@@ -205,11 +332,72 @@
             <div class="chat-input-pro">
                 <div class="chat-input-wrapper-pro">
                     <textarea id="chat-input" placeholder="اكتب رسالتك هنا..." rows="1"></textarea>
+                    <button id="mic-btn" class="mic-btn-pro" title="تسجيل صوتي">
+                        <i class="fas fa-microphone"></i>
+                    </button>
                     <button id="send-btn" class="send-btn-pro" disabled>
                         <i class="fas fa-arrow-up"></i>
                     </button>
                 </div>
                 <p class="chat-disclaimer">RAGMind يجيب من مستنداتك فقط. تحقق دائماً من المعلومات المهمة.</p>
+            </div>
+        </div>
+    </template>
+
+    <template id="srs-template">
+        <div class="srs-view">
+            <div class="srs-header">
+                <div>
+                    <h1 class="view-title" data-i18n="srs_title">مراجعة المتطلبات (SRS)</h1>
+                    <p class="view-subtitle" data-i18n="srs_subtitle">نسخة أولية من المتطلبات مع نقاط تحتاج توضيح.</p>
+                </div>
+                <div class="srs-actions">
+                    <select id="srs-project-select" class="srs-select">
+                        <option value="" data-i18n="select_project_ph">اختر مشروعاً...</option>
+                    </select>
+                    <button id="srs-refresh-btn" class="btn btn-secondary">
+                        <i class="fas fa-rotate"></i>
+                        <span data-i18n="srs_refresh">تحديث المسودة</span>
+                    </button>
+                    <button id="srs-export-btn" class="btn btn-primary" disabled>
+                        <i class="fas fa-download"></i>
+                        <span data-i18n="srs_export">تصدير SRS</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="srs-grid">
+                <section class="srs-draft">
+                    <div class="srs-draft-header">
+                        <div class="status-pill" id="srs-status">مسودة أولية</div>
+                        <div class="srs-meta" id="srs-updated">آخر تحديث: اليوم</div>
+                    </div>
+                    <div id="srs-sections" class="srs-sections"></div>
+                </section>
+
+                <aside class="srs-summary">
+                    <div class="summary-card">
+                        <h3 data-i18n="srs_summary_title">ملخص سريع</h3>
+                        <p id="srs-summary-text"></p>
+                        <div class="summary-metrics" id="srs-metrics"></div>
+                    </div>
+                    <div class="summary-card">
+                        <h3 data-i18n="srs_open_questions">نقاط تحتاج توضيح</h3>
+                        <ul id="srs-open-questions" class="summary-list"></ul>
+                    </div>
+                    <div class="summary-card highlight">
+                        <h3 data-i18n="srs_next_steps">الخطوات القادمة</h3>
+                        <ul id="srs-next-steps" class="summary-list"></ul>
+                        <button id="srs-confirm-btn" class="btn btn-primary w-100 mt-4">
+                            <i class="fas fa-check-circle"></i>
+                            <span data-i18n="srs_confirm">اعتماد المتطلبات</span>
+                        </button>
+                        <button id="srs-book-btn" class="btn btn-ghost w-100 mt-4">
+                            <i class="fas fa-calendar-check"></i>
+                            <span data-i18n="srs_book_meeting">احجز جلسة مع الفريق</span>
+                        </button>
+                    </div>
+                </aside>
             </div>
         </div>
     </template>

@@ -12,6 +12,8 @@ const i18n = {
         nav_dashboard: "لوحة التحكم",
         nav_projects: "المشاريع",
         nav_chat: "المحادثة الذكية",
+        interview_mode: "وضع المقابلة",
+        nav_srs: "مراجعة المتطلبات",
         nav_bot: "إعدادات البوت",
         nav_ai_config: "إعدادات الذكاء الاصطناعي",
         stat_projects: "إجمالي المشاريع",
@@ -73,12 +75,49 @@ const i18n = {
         empty_docs: "لا توجد مستندات بعد",
         empty_docs_desc: "ارفع ملفات PDF أو TXT أو DOCX لبدء المعالجة.",
         copy_btn: "نسخ",
-        copied_btn: "تم النسخ!"
+        copied_btn: "تم النسخ!",
+        srs_title: "مراجعة المتطلبات (SRS)",
+        srs_subtitle: "نسخة أولية من المتطلبات مع نقاط تحتاج توضيح.",
+        srs_refresh: "تحديث المسودة",
+        srs_export: "تصدير SRS",
+        srs_summary_title: "ملخص سريع",
+        srs_open_questions: "نقاط تحتاج توضيح",
+        srs_next_steps: "الخطوات القادمة",
+        srs_book_meeting: "احجز جلسة مع الفريق",
+        srs_confirm: "اعتماد المتطلبات",
+        srs_confirmed: "تم اعتماد المتطلبات بنجاح!",
+        book_meeting_title: "حجز جلسة مع الفريق التقني",
+        book_name: "الاسم",
+        book_email: "البريد الإلكتروني",
+        book_date: "التاريخ المفضل",
+        book_time: "الوقت المفضل",
+        book_notes: "ملاحظات إضافية",
+        book_submit: "تأكيد الحجز",
+        book_success: "تم الحجز بنجاح! سيتم التواصل معك قريباً.",
+        book_fill_required: "يرجى ملء جميع الحقول المطلوبة",
+        stage_discovery: "الاستكشاف",
+        stage_scope: "النطاق",
+        stage_users: "المستخدمون",
+        stage_features: "الميزات",
+        stage_constraints: "القيود",
+        mic_recording: "جاري التسجيل...",
+        mic_transcribing: "جاري التحويل...",
+        mic_error: "تعذر الوصول للميكروفون",
+        mic_no_support: "المتصفح لا يدعم التسجيل الصوتي",
+        live_doc_title: "ملخص المتطلبات",
+        live_doc_empty: "ابدأ المقابلة وسيتم تحديث الملخص تلقائياً...",
+        start_idea_btn: "ابدأ فكرة جديدة",
+        upload_reference_docs: "رفع مستندات",
+        start_idea_title: "ابدأ فكرة جديدة",
+        idea_name_ph: "مثلاً: تطبيق إدارة المهام",
+        start_idea_submit: "ابدأ الآن"
     },
     en: {
         nav_dashboard: "Dashboard",
         nav_projects: "Projects",
         nav_chat: "Smart Chat",
+        interview_mode: "Interview mode",
+        nav_srs: "SRS Review",
         nav_bot: "Bot Settings",
         nav_ai_config: "AI Settings",
         stat_projects: "Total Projects",
@@ -140,7 +179,42 @@ const i18n = {
         empty_docs: "No documents yet",
         empty_docs_desc: "Upload PDF, TXT, or DOCX files to start processing.",
         copy_btn: "Copy",
-        copied_btn: "Copied!"
+        copied_btn: "Copied!",
+        srs_title: "SRS Review",
+        srs_subtitle: "A first draft of requirements with items that need clarification.",
+        srs_refresh: "Refresh Draft",
+        srs_export: "Export SRS",
+        srs_summary_title: "Quick Summary",
+        srs_open_questions: "Open Questions",
+        srs_next_steps: "Next Steps",
+        srs_book_meeting: "Book a team session",
+        srs_confirm: "Approve Requirements",
+        srs_confirmed: "Requirements approved successfully!",
+        book_meeting_title: "Book a session with the technical team",
+        book_name: "Name",
+        book_email: "Email",
+        book_date: "Preferred Date",
+        book_time: "Preferred Time",
+        book_notes: "Additional Notes",
+        book_submit: "Confirm Booking",
+        book_success: "Booked successfully! We will contact you soon.",
+        book_fill_required: "Please fill all required fields",
+        stage_discovery: "Discovery",
+        stage_scope: "Scope",
+        stage_users: "Users",
+        stage_features: "Features",
+        stage_constraints: "Constraints",
+        mic_recording: "Recording...",
+        mic_transcribing: "Transcribing...",
+        mic_error: "Cannot access microphone",
+        mic_no_support: "Browser does not support audio recording",
+        live_doc_title: "Requirements Summary",
+        live_doc_empty: "Start the interview and the summary will update automatically...",
+        start_idea_btn: "Start New Idea",
+        upload_reference_docs: "Upload Docs",
+        start_idea_title: "Start a New Idea",
+        idea_name_ph: "Ex: Task Management App",
+        start_idea_submit: "Start Now"
     }
 };
 
@@ -154,9 +228,34 @@ const state = {
     isUploading: false,
     retrievalTopK: null,
     docPoller: null,
+    interviewMode: false,
+    interviewStage: 'discovery',
+    isRecording: false,
+    mediaRecorder: null,
+    pendingProjectSelect: null,
+    chatProjectId: null,
+    srsRefreshing: false,
+    previousSummary: null,
+    lastCoverage: null,
+    authToken: localStorage.getItem('authToken') || null,
+    currentUser: JSON.parse(localStorage.getItem('currentUser') || 'null'),
     lang: localStorage.getItem('lang') || 'ar',
-    theme: localStorage.getItem('theme') || 'dark'
+    theme: localStorage.getItem('theme') || 'light'
 };
+
+function getFallbackSrsDraft() {
+    return {
+        status: state.lang === 'ar' ? 'مسودة أولية' : 'First Draft',
+        updated: state.lang === 'ar' ? 'آخر تحديث: اليوم' : 'Last updated: today',
+        summary: state.lang === 'ar'
+            ? 'لا توجد مسودة بعد. حدّث المحادثة أولاً ثم اضغط تحديث المسودة.'
+            : 'No draft yet. Start a chat and click refresh to generate one.',
+        metrics: [],
+        sections: [],
+        questions: [],
+        nextSteps: []
+    };
+}
 
 // DOM Elements
 const elements = {
@@ -331,9 +430,29 @@ const views = {
             select.appendChild(opt);
         });
 
+        // Auto-select project if coming from "Start New Idea"
+        if (state.pendingProjectSelect) {
+            select.value = state.pendingProjectSelect;
+            state.chatProjectId = state.pendingProjectSelect;
+            loadChatHistory(state.pendingProjectSelect);
+            state.pendingProjectSelect = null;
+        } else if (state.chatProjectId) {
+            select.value = state.chatProjectId;
+            loadChatHistory(state.chatProjectId);
+        }
+
+        // Load chat history when switching projects
+        select.onchange = () => {
+            if (select.value) {
+                state.chatProjectId = parseInt(select.value);
+                loadChatHistory(state.chatProjectId);
+            }
+        };
+
         const sendBtn = document.getElementById('send-btn');
         const chatInput = document.getElementById('chat-input');
         const clearBtn = document.getElementById('clear-chat-btn');
+        const interviewToggle = document.getElementById('chat-interview-toggle');
 
         // Enable/disable send button based on input
         chatInput.oninput = () => {
@@ -348,6 +467,55 @@ const views = {
                 if (chatInput.value.trim()) handleChatSubmit();
             }
         };
+
+        // Mic button handler
+        const micBtn = document.getElementById('mic-btn');
+        if (micBtn) {
+            micBtn.onclick = () => {
+                if (state.isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            };
+        }
+
+        if (interviewToggle) {
+            interviewToggle.checked = state.interviewMode;
+            interviewToggle.onchange = () => {
+                state.interviewMode = interviewToggle.checked;
+                updateInterviewProgress(null, false);
+                const hint = state.lang === 'ar'
+                    ? 'وضع المقابلة: الأسئلة ستكون موجّهة لاستخراج المتطلبات.'
+                    : 'Interview mode: guided questions to capture requirements.';
+                showNotification(hint, 'info');
+            };
+        }
+
+        // Init interview progress bar state
+        updateInterviewProgress(null, false);
+
+        // Live doc close button
+        const liveDocClose = document.getElementById('live-doc-close');
+        if (liveDocClose) {
+            liveDocClose.onclick = () => {
+                const panel = document.getElementById('live-doc-panel');
+                if (panel) panel.style.display = 'none';
+            };
+        }
+
+        // Upload reference docs button
+        const uploadRefBtn = document.getElementById('chat-upload-ref-btn');
+        if (uploadRefBtn) {
+            uploadRefBtn.onclick = () => {
+                const projectId = select.value;
+                if (!projectId) {
+                    showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
+                    return;
+                }
+                openUploadModal(parseInt(projectId));
+            };
+        }
 
         // Clear chat handler
         if (clearBtn) {
@@ -375,6 +543,95 @@ const views = {
         });
 
         applyTranslations();
+    },
+
+    async srs() {
+        renderTemplate('srs-template');
+        showLoader();
+
+        try {
+            const projects = await api.get('/projects/');
+            const select = document.getElementById('srs-project-select');
+            const refreshBtn = document.getElementById('srs-refresh-btn');
+            const exportBtn = document.getElementById('srs-export-btn');
+            const bookBtn = document.getElementById('srs-book-btn');
+
+            projects.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id;
+                opt.textContent = p.name;
+                select.appendChild(opt);
+            });
+
+            if (state.selectedProject && select) {
+                select.value = state.selectedProject.id;
+            }
+
+            refreshBtn.onclick = async () => {
+                if (!select.value) {
+                    showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
+                    return;
+                }
+                refreshBtn.disabled = true;
+                await loadSrsDraft(select.value, true);
+                refreshBtn.disabled = false;
+            };
+            exportBtn.onclick = async () => {
+                if (!select.value) {
+                    showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
+                    return;
+                }
+                await downloadSrsPdf(select.value);
+            };
+            bookBtn.onclick = () => openBookingModal();
+
+            const confirmBtn = document.getElementById('srs-confirm-btn');
+            if (confirmBtn) {
+                confirmBtn.onclick = async () => {
+                    if (!select.value) {
+                        showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
+                        return;
+                    }
+                    try {
+                        const clientName = state.currentUser ? state.currentUser.name : '';
+                        const clientEmail = state.currentUser ? state.currentUser.email : '';
+                        await api.post(`/projects/${select.value}/handoff`, {
+                            client_name: clientName,
+                            client_email: clientEmail,
+                            notes: ''
+                        });
+                    } catch (error) {
+                        console.error('Handoff error:', error);
+                    }
+                    showNotification(i18n[state.lang].srs_confirmed, 'success');
+                    confirmBtn.disabled = true;
+                    confirmBtn.innerHTML = `<i class="fas fa-check-double"></i> <span>${state.lang === 'ar' ? 'تم الاعتماد' : 'Approved'}</span>`;
+                    confirmBtn.classList.remove('btn-primary');
+                    confirmBtn.classList.add('btn-confirmed');
+                };
+            }
+
+            exportBtn.disabled = !select.value;
+            select.onchange = async () => {
+                exportBtn.disabled = !select.value;
+                if (select.value) {
+                    await loadSrsDraft(select.value, false);
+                } else {
+                    renderSrsDraft(getFallbackSrsDraft());
+                }
+            };
+
+            if (select.value) {
+                await loadSrsDraft(select.value, false);
+            } else {
+                renderSrsDraft(getFallbackSrsDraft());
+            }
+            applyTranslations();
+        } catch (error) {
+            console.error('SRS View Error:', error);
+        } finally {
+            hideLoader();
+        }
     },
 
     async 'bot-config'() {
@@ -586,6 +843,273 @@ function hideLoader() {
     if (loader) loader.remove();
 }
 
+async function loadSrsDraft(projectId, forceRefresh = false) {
+    if (state.srsRefreshing) return;
+    state.srsRefreshing = true;
+    try {
+        let draft;
+        if (!forceRefresh) {
+            try {
+                draft = await api.get(`/projects/${projectId}/srs`);
+            } catch (error) {
+                const msg = error?.message || '';
+                if (!msg.includes('404')) throw error;
+            }
+        }
+
+        if (!draft) {
+            draft = await api.post(`/projects/${projectId}/srs/refresh`, {
+                language: state.lang
+            });
+        }
+
+        renderSrsDraft(draft.content, draft);
+    } catch (error) {
+        console.error('SRS Load Error:', error);
+        renderSrsDraft(getFallbackSrsDraft(), null);
+        showNotification(state.lang === 'ar' ? 'تعذر تحميل المسودة' : 'Failed to load draft', 'error');
+    } finally {
+        state.srsRefreshing = false;
+    }
+}
+
+function renderSrsDraft(content, draftMeta) {
+    const draft = content || getFallbackSrsDraft();
+    const statusEl = document.getElementById('srs-status');
+    const updatedEl = document.getElementById('srs-updated');
+    const summaryEl = document.getElementById('srs-summary-text');
+    const metricsEl = document.getElementById('srs-metrics');
+    const sectionsEl = document.getElementById('srs-sections');
+    const questionsEl = document.getElementById('srs-open-questions');
+    const nextStepsEl = document.getElementById('srs-next-steps');
+
+    if (statusEl) statusEl.textContent = draft.status || (state.lang === 'ar' ? 'مسودة أولية' : 'First Draft');
+    if (updatedEl) {
+        const fallbackTime = state.lang === 'ar' ? 'آخر تحديث: الآن' : 'Last updated: now';
+        updatedEl.textContent = draftMeta?.created_at
+            ? `${state.lang === 'ar' ? 'آخر تحديث:' : 'Last updated:'} ${new Date(draftMeta.created_at).toLocaleString()}`
+            : draft.updated || fallbackTime;
+    }
+    if (summaryEl) summaryEl.textContent = draft.summary;
+
+    if (metricsEl) {
+        metricsEl.innerHTML = (draft.metrics || [])
+            .map(item => `
+                <div class="metric-chip">
+                    <span class="metric-label">${escapeHtml(item.label)}</span>
+                    <span class="metric-value">${escapeHtml(item.value)}</span>
+                </div>
+            `)
+            .join('');
+    }
+
+    if (sectionsEl) {
+        const sections = draft.sections || [];
+        sectionsEl.innerHTML = sections.length
+            ? sections
+            .map((section, idx) => `
+                <article class="srs-section" data-confidence="${escapeHtml(section.confidence)}" data-idx="${idx}">
+                    <div class="srs-section-header">
+                        <h3>${escapeHtml(section.title)}</h3>
+                        <div class="srs-section-actions">
+                            <span class="confidence-badge">${escapeHtml(section.confidence)}</span>
+                            <button class="srs-edit-btn" data-idx="${idx}" title="${state.lang === 'ar' ? 'تعديل' : 'Edit'}">
+                                <i class="fas fa-pen"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <ul>
+                        ${section.items.map((item, iIdx) => `<li data-section="${idx}" data-item="${iIdx}">${escapeHtml(item)}</li>`).join('')}
+                    </ul>
+                </article>
+            `)
+            .join('')
+            : `<div class="empty-state">
+                    <div class="empty-state-icon"><i class="fas fa-file-circle-xmark"></i></div>
+                    <h3>${state.lang === 'ar' ? 'لا توجد مسودة بعد' : 'No draft yet'}</h3>
+                    <p>${state.lang === 'ar' ? 'ابدأ المحادثة ثم اضغط تحديث المسودة.' : 'Start a chat then refresh the draft.'}</p>
+                </div>`;
+
+        // Attach inline edit handlers
+        sectionsEl.querySelectorAll('.srs-edit-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                e.stopPropagation();
+                const sectionIdx = parseInt(btn.dataset.idx);
+                const article = sectionsEl.querySelector(`[data-idx="${sectionIdx}"]`);
+                if (!article) return;
+                const ul = article.querySelector('ul');
+                if (!ul || ul.classList.contains('editing')) return;
+
+                ul.classList.add('editing');
+                const items = ul.querySelectorAll('li');
+                items.forEach(li => {
+                    li.contentEditable = 'true';
+                    li.classList.add('editable');
+                });
+
+                // Change button to save
+                btn.innerHTML = `<i class="fas fa-check"></i>`;
+                btn.title = state.lang === 'ar' ? 'حفظ' : 'Save';
+                btn.classList.add('saving');
+
+                btn.onclick = () => {
+                    items.forEach(li => {
+                        li.contentEditable = 'false';
+                        li.classList.remove('editable');
+                    });
+                    ul.classList.remove('editing');
+                    btn.innerHTML = `<i class="fas fa-pen"></i>`;
+                    btn.title = state.lang === 'ar' ? 'تعديل' : 'Edit';
+                    btn.classList.remove('saving');
+                    showNotification(state.lang === 'ar' ? 'تم حفظ التعديلات' : 'Changes saved', 'success');
+
+                    // Re-attach the edit handler
+                    btn.onclick = (e2) => {
+                        e2.stopPropagation();
+                        btn.click();
+                    };
+                };
+            };
+        });
+    }
+
+    if (questionsEl) {
+        questionsEl.innerHTML = (draft.questions || [])
+            .map(item => `<li>${escapeHtml(item)}</li>`)
+            .join('');
+    }
+
+    if (nextStepsEl) {
+        nextStepsEl.innerHTML = (draft.nextSteps || draft.next_steps || [])
+            .map(item => `<li>${escapeHtml(item)}</li>`)
+            .join('');
+    }
+}
+
+async function downloadSrsPdf(projectId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/srs/export`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `srs_project_${projectId}.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    } catch (error) {
+        console.error('SRS Export Error:', error);
+        showNotification(state.lang === 'ar' ? 'تعذر تصدير SRS' : 'Failed to export SRS', 'error');
+    }
+}
+
+async function logChatMessages(projectId, userText, assistantText, sources) {
+    try {
+        await api.post(`/projects/${projectId}/messages`, {
+            messages: [
+                { role: 'user', content: userText },
+                { role: 'assistant', content: assistantText, metadata: { sources: sources || [] } }
+            ]
+        });
+    } catch (error) {
+        console.error('Log Messages Error:', error);
+    }
+}
+
+async function loadChatHistory(projectId) {
+    const messagesContainer = document.getElementById('chat-messages');
+    if (!messagesContainer) return;
+
+    // Show loading state
+    messagesContainer.innerHTML = `
+        <div class="welcome-msg-pro">
+            <div class="welcome-icon">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <p>${state.lang === 'ar' ? 'جاري تحميل المحادثة...' : 'Loading conversation...'}</p>
+        </div>
+    `;
+
+    try {
+        const messages = await api.get(`/projects/${projectId}/messages`);
+
+        // Clear container
+        messagesContainer.innerHTML = '';
+
+        if (!messages || messages.length === 0) {
+            // Show welcome message if no history
+            messagesContainer.innerHTML = `
+                <div class="welcome-msg-pro">
+                    <div class="welcome-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
+                    <p>${state.lang === 'ar' ? 'ابدأ في طرح الأسئلة حول مشروعك.' : 'Start asking questions about your project.'}</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Render each message from history
+        for (const msg of messages) {
+            const role = msg.role === 'user' ? 'user' : 'bot';
+            const id = addChatMessage(role, msg.role === 'user' ? msg.content : '', false);
+
+            // For assistant messages, render formatted HTML
+            if (msg.role === 'assistant') {
+                const textEl = document.querySelector(`#msg-${id} .msg-text`);
+                if (textEl) {
+                    textEl.innerHTML = formatAnswerHtml(msg.content) || escapeHtml(msg.content);
+                    textEl.dir = detectTextDirection(msg.content);
+                }
+
+                // Render sources if available in metadata
+                if (msg.metadata && msg.metadata.sources && msg.metadata.sources.length > 0) {
+                    const msgDiv = document.getElementById(`msg-${id}`);
+                    const sourcesDiv = document.createElement('div');
+                    sourcesDiv.className = 'msg-sources-pro';
+                    sourcesDiv.innerHTML = `
+                        <div class="sources-header">
+                            <i class="fas fa-book-open"></i>
+                            <span>${state.lang === 'ar' ? 'المصادر المستخدمة' : 'Sources Used'}</span>
+                        </div>
+                    `;
+                    const list = document.createElement('ul');
+                    msg.metadata.sources.slice(0, 5).forEach(s => {
+                        const li = document.createElement('li');
+                        li.innerHTML = `
+                            <i class="fas fa-file-alt"></i>
+                            <span>${escapeHtml(s.document_name || s.name || '')}</span>
+                            ${s.similarity ? `<span class="source-score">${(s.similarity * 100).toFixed(0)}%</span>` : ''}
+                        `;
+                        list.appendChild(li);
+                    });
+                    sourcesDiv.appendChild(list);
+                    msgDiv.querySelector('.msg-body').appendChild(sourcesDiv);
+                }
+            }
+        }
+
+        // Scroll to bottom
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    } catch (error) {
+        console.error('Load Chat History Error:', error);
+        messagesContainer.innerHTML = `
+            <div class="welcome-msg-pro">
+                <div class="welcome-icon">
+                    <i class="fas fa-robot"></i>
+                </div>
+                <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
+                <p>${state.lang === 'ar' ? 'ابدأ في طرح الأسئلة حول مشروعك.' : 'Start asking questions about your project.'}</p>
+            </div>
+        `;
+    }
+}
+
 function createProjectCard(project) {
     const card = document.createElement('div');
     card.className = 'project-card';
@@ -607,7 +1131,8 @@ function createProjectCard(project) {
             handleDeleteProject(project.id);
             return;
         }
-        switchView('projectDetail', project.id);
+        state.pendingProjectSelect = project.id;
+        switchView('chat');
     };
 
     return card;
@@ -812,17 +1337,20 @@ async function switchView(viewName, params = null) {
 }
 
 async function handleNewProject() {
-    elements.modalTitle.textContent = i18n[state.lang].create_project_btn;
+    const t = i18n[state.lang];
+    elements.modalTitle.textContent = t.start_idea_title;
     elements.modalBody.innerHTML = `
         <div class="form-group">
-            <label>${state.lang === 'ar' ? 'اسم المشروع' : 'Project Name'}</label>
-            <input type="text" id="new-project-name" class="form-control">
+            <label>${state.lang === 'ar' ? 'اسم الفكرة / المشروع' : 'Idea / Project Name'}</label>
+            <input type="text" id="new-project-name" class="form-control" placeholder="${t.idea_name_ph}">
         </div>
         <div class="form-group">
-            <label>${state.lang === 'ar' ? 'الوصف' : 'Description'}</label>
-            <textarea id="new-project-desc" class="form-control"></textarea>
+            <label>${state.lang === 'ar' ? 'الوصف (اختياري)' : 'Description (optional)'}</label>
+            <textarea id="new-project-desc" class="form-control" placeholder="${t.project_desc_ph}"></textarea>
         </div>
-        <button id="save-project-btn" class="btn btn-primary w-100 mt-4">${i18n[state.lang].create_project_btn}</button>
+        <button id="save-project-btn" class="btn btn-primary w-100 mt-4">
+            <i class="fas fa-lightbulb"></i> ${t.start_idea_submit}
+        </button>
     `;
     applyTranslations();
 
@@ -838,10 +1366,16 @@ async function handleNewProject() {
         }
 
         try {
-            await api.post('/projects/', { name, description });
+            const newProject = await api.post('/projects/', { name, description });
             showNotification(i18n[state.lang].success_saved, 'success');
             elements.modalOverlay.classList.add('hidden');
-            switchView(state.currentView); // Refresh current view
+
+            // Navigate to chat with interview mode ON
+            state.interviewMode = true;
+            state.pendingProjectSelect = newProject.id;
+            state.previousSummary = null;
+            state.lastCoverage = null;
+            switchView('chat');
         } catch (error) {
             console.error('Create Project Error:', error);
         }
@@ -896,6 +1430,68 @@ async function handleChatSubmit() {
     sendBtn.disabled = true;
 
     const thinkingId = addChatMessage('bot', '', true);
+
+    if (state.interviewMode) {
+        try {
+            await api.post(`/projects/${projectId}/messages`, {
+                messages: [{ role: 'user', content: query }]
+            });
+
+            const interviewPayload = { language };
+            if (state.previousSummary) {
+                interviewPayload.last_summary = state.previousSummary;
+            }
+            if (state.lastCoverage) {
+                interviewPayload.last_coverage = state.lastCoverage;
+            }
+
+            const next = await api.post(`/projects/${projectId}/interview/next`, interviewPayload);
+
+            const questionText = next.question || (state.lang === 'ar'
+                ? 'هل يمكن توضيح النقطة الأخيرة بمثال؟'
+                : 'Could you clarify the last point with an example?');
+
+            finalizeBotMessage(thinkingId, questionText, null);
+
+            // Store coverage for next request
+            if (next.coverage) {
+                state.lastCoverage = next.coverage;
+            }
+            updateInterviewProgress(next.coverage, next.done);
+            if (next.summary) {
+                updateLiveDoc(next.summary, next.stage);
+            }
+
+            await api.post(`/projects/${projectId}/messages`, {
+                messages: [{ role: 'assistant', content: questionText, metadata: { stage: next.stage || '' } }]
+            });
+
+            // Auto-generate SRS and navigate when interview completes
+            if (next.done) {
+                showNotification(
+                    state.lang === 'ar'
+                        ? 'تم إكمال المقابلة بنجاح! جارٍ إنشاء مستند SRS...'
+                        : 'Interview complete! Generating SRS document...',
+                    'success'
+                );
+                state.srsRefreshing = true;
+                try {
+                    await api.post(`/projects/${projectId}/srs/refresh`, { language });
+                } catch (e) {
+                    console.error('Auto SRS generation failed:', e);
+                } finally {
+                    state.srsRefreshing = false;
+                }
+                state.selectedProject = { id: parseInt(projectId) };
+                setTimeout(() => switchView('srs'), 1500);
+            }
+        } catch (error) {
+            console.error('Interview Error:', error);
+            const msg = state.lang === 'ar' ? 'تعذر إكمال المقابلة الآن' : 'Interview failed. Try again.';
+            finalizeBotMessage(thinkingId, msg, null);
+        }
+        return;
+    }
 
     try {
         const payload = { query, language };
@@ -967,6 +1563,7 @@ async function handleChatSubmit() {
 
         // Finalize: attach sources + copy button
         finalizeBotMessage(thinkingId, fullAnswer, sources);
+        logChatMessages(projectId, query, fullAnswer, sources);
 
     } catch (error) {
         // Fallback: try non-streaming endpoint
@@ -981,6 +1578,7 @@ async function handleChatSubmit() {
             const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
             if (ind) ind.remove();
             finalizeBotMessage(thinkingId, result.answer, result.sources);
+            logChatMessages(projectId, query, result.answer, result.sources);
         } catch (fallbackErr) {
             const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
             if (ind) ind.remove();
@@ -1270,16 +1868,473 @@ async function handleFiles(files, projectId) {
         try {
             await api.post(`/projects/${projectId}/documents`, formData, true);
             showNotification(`${state.lang === 'ar' ? 'تم رفع' : 'Uploaded'} ${file.name}`, 'success');
-            switchView('projectDetail', projectId); // Refresh list
         } catch (error) {
             console.error('Upload Error:', error);
         }
     }
 }
 
+// --- Upload Modal (from chat) ---
+
+function openUploadModal(projectId) {
+    const t = i18n[state.lang];
+    elements.modalTitle.textContent = t.upload_reference_docs || (state.lang === 'ar' ? 'رفع مستندات مرجعية' : 'Upload Reference Documents');
+    elements.modalBody.innerHTML = `
+        <p class="config-desc">${state.lang === 'ar'
+            ? 'ارفع مستندات مرجعية لمساعدة الذكاء الاصطناعي في فهم مشروعك بشكل أفضل. هذه الخطوة اختيارية.'
+            : 'Upload reference documents to help the AI better understand your project. This step is optional.'}</p>
+        <div class="upload-zone" id="modal-upload-zone">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <p>${t.upload_desc}</p>
+            <span class="hint">${state.lang === 'ar' ? 'يدعم PDF, TXT, DOCX' : 'Supports PDF, TXT, DOCX'}</span>
+            <input type="file" id="modal-file-input" multiple hidden accept=".pdf,.txt,.docx">
+        </div>
+        <div id="modal-upload-status" class="mt-4"></div>
+    `;
+
+    elements.modalOverlay.classList.remove('hidden');
+
+    const zone = document.getElementById('modal-upload-zone');
+    const input = document.getElementById('modal-file-input');
+
+    zone.onclick = () => input.click();
+
+    zone.ondragover = (e) => {
+        e.preventDefault();
+        zone.classList.add('dragover');
+    };
+
+    zone.ondragleave = () => zone.classList.remove('dragover');
+
+    zone.ondrop = (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        handleFiles(e.dataTransfer.files, projectId);
+    };
+
+    input.onchange = () => handleFiles(input.files, projectId);
+}
+
+// --- Booking Modal ---
+
+function openBookingModal() {
+    const t = i18n[state.lang];
+    elements.modalTitle.textContent = t.book_meeting_title;
+    elements.modalBody.innerHTML = `
+        <div class="booking-form">
+            <div class="form-group">
+                <label>${t.book_name} *</label>
+                <input type="text" id="book-name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label>${t.book_email} *</label>
+                <input type="email" id="book-email" class="form-control" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>${t.book_date} *</label>
+                    <input type="date" id="book-date" class="form-control" min="${new Date().toISOString().split('T')[0]}" required>
+                </div>
+                <div class="form-group">
+                    <label>${t.book_time} *</label>
+                    <select id="book-time" class="form-control">
+                        <option value="09:00">09:00 AM</option>
+                        <option value="10:00">10:00 AM</option>
+                        <option value="11:00">11:00 AM</option>
+                        <option value="12:00">12:00 PM</option>
+                        <option value="13:00">01:00 PM</option>
+                        <option value="14:00">02:00 PM</option>
+                        <option value="15:00">03:00 PM</option>
+                        <option value="16:00">04:00 PM</option>
+                        <option value="17:00">05:00 PM</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>${t.book_notes}</label>
+                <textarea id="book-notes" class="form-control" rows="3"></textarea>
+            </div>
+            <button id="book-submit-btn" class="btn btn-primary w-100 mt-4">
+                <i class="fas fa-calendar-check"></i> ${t.book_submit}
+            </button>
+        </div>
+    `;
+
+    elements.modalOverlay.classList.remove('hidden');
+
+    document.getElementById('book-submit-btn').onclick = () => {
+        const name = document.getElementById('book-name').value.trim();
+        const email = document.getElementById('book-email').value.trim();
+        const date = document.getElementById('book-date').value;
+        const time = document.getElementById('book-time').value;
+        const notes = document.getElementById('book-notes').value.trim();
+
+        if (!name || !email || !date) {
+            showNotification(t.book_fill_required, 'warning');
+            return;
+        }
+
+        // Store booking (for now, just notify success - backend integration can be added later)
+        console.log('Booking:', { name, email, date, time, notes, project: state.selectedProject?.name });
+        showNotification(t.book_success, 'success');
+        elements.modalOverlay.classList.add('hidden');
+    };
+}
+
+// --- Voice Recording (STT) ---
+
+async function startRecording() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        showNotification(i18n[state.lang].mic_no_support, 'warning');
+        return;
+    }
+
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+        const chunks = [];
+
+        mediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+        };
+
+        mediaRecorder.onstop = async () => {
+            stream.getTracks().forEach(track => track.stop());
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            await transcribeAudio(blob);
+        };
+
+        state.mediaRecorder = mediaRecorder;
+        state.isRecording = true;
+        mediaRecorder.start();
+        updateMicButton(true);
+        showNotification(i18n[state.lang].mic_recording, 'info');
+    } catch (error) {
+        console.error('Mic access error:', error);
+        showNotification(i18n[state.lang].mic_error, 'error');
+    }
+}
+
+function stopRecording() {
+    if (state.mediaRecorder && state.isRecording) {
+        state.mediaRecorder.stop();
+        state.isRecording = false;
+        updateMicButton(false);
+    }
+}
+
+async function transcribeAudio(blob) {
+    const micBtn = document.getElementById('mic-btn');
+    if (micBtn) {
+        micBtn.disabled = true;
+        micBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    try {
+        const langSelect = document.getElementById('chat-lang');
+        const language = langSelect ? langSelect.value : 'auto';
+
+        const formData = new FormData();
+        formData.append('file', blob, 'recording.webm');
+        formData.append('language', language);
+
+        const response = await fetch(`${API_BASE_URL}/stt/transcribe`, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Transcription failed');
+        }
+
+        const result = await response.json();
+        if (result.success && result.text) {
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                chatInput.value += (chatInput.value ? ' ' : '') + result.text;
+                chatInput.oninput();
+                chatInput.focus();
+            }
+        }
+    } catch (error) {
+        console.error('STT Error:', error);
+        showNotification(error.message, 'error');
+    } finally {
+        if (micBtn) {
+            micBtn.disabled = false;
+            micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+        }
+    }
+}
+
+function updateMicButton(recording) {
+    const micBtn = document.getElementById('mic-btn');
+    if (!micBtn) return;
+    if (recording) {
+        micBtn.classList.add('recording');
+        micBtn.innerHTML = '<i class="fas fa-stop"></i>';
+    } else {
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
+    }
+}
+
+// --- Interview Progress ---
+
+function updateInterviewProgress(coverage, done) {
+    const progressBar = document.getElementById('interview-progress');
+    const liveDocPanel = document.getElementById('live-doc-panel');
+
+    if (!state.interviewMode || done) {
+        if (progressBar) progressBar.style.display = 'none';
+        if (liveDocPanel) liveDocPanel.style.display = 'none';
+        return;
+    }
+
+    if (progressBar) {
+        progressBar.style.display = 'block';
+        const areas = ['discovery', 'scope', 'users', 'features', 'constraints'];
+
+        // Find the active area (lowest coverage that is not yet >= 70%)
+        let activeArea = null;
+        if (coverage) {
+            let minCoverage = Infinity;
+            for (const area of areas) {
+                const pct = coverage[area] || 0;
+                if (pct < 70 && pct < minCoverage) {
+                    minCoverage = pct;
+                    activeArea = area;
+                }
+            }
+        }
+
+        areas.forEach(area => {
+            const pct = coverage ? (coverage[area] || 0) : 0;
+            const fillEl = document.getElementById(`coverage-${area}`);
+            const pctEl = document.getElementById(`coverage-pct-${area}`);
+            const itemEl = progressBar.querySelector(`[data-area="${area}"]`);
+
+            if (fillEl) fillEl.style.width = `${Math.min(100, pct)}%`;
+            if (pctEl) pctEl.textContent = `${Math.round(pct)}%`;
+
+            if (itemEl) {
+                itemEl.classList.remove('active-area', 'complete-area');
+                if (pct >= 70) {
+                    itemEl.classList.add('complete-area');
+                } else if (area === activeArea) {
+                    itemEl.classList.add('active-area');
+                }
+            }
+        });
+    }
+
+    if (liveDocPanel) {
+        liveDocPanel.style.display = 'flex';
+    }
+}
+
+function updateLiveDoc(summary, stage) {
+    const content = document.getElementById('live-doc-content');
+    if (!content || !summary) return;
+
+    const areaIcons = {
+        discovery: 'fa-compass',
+        scope: 'fa-bullseye',
+        users: 'fa-users',
+        features: 'fa-puzzle-piece',
+        constraints: 'fa-shield-halved'
+    };
+
+    const stageLabels = {
+        discovery: i18n[state.lang].stage_discovery,
+        scope: i18n[state.lang].stage_scope,
+        users: i18n[state.lang].stage_users,
+        features: i18n[state.lang].stage_features,
+        constraints: i18n[state.lang].stage_constraints
+    };
+
+    // Structured summary (object with arrays)
+    if (typeof summary === 'object' && !Array.isArray(summary)) {
+        const prevSummary = state.previousSummary || {};
+        let html = '';
+
+        for (const [area, items] of Object.entries(summary)) {
+            if (!Array.isArray(items) || items.length === 0) continue;
+
+            const prevItems = (prevSummary[area] || []);
+            const icon = areaIcons[area] || 'fa-circle-dot';
+            const label = stageLabels[area] || area;
+
+            html += `
+                <div class="live-doc-srs-section">
+                    <div class="live-doc-section-header">
+                        <i class="fas ${icon}"></i>
+                        <span>${escapeHtml(label)}</span>
+                        <span class="live-doc-count-badge">${items.length}</span>
+                    </div>
+                    <ul class="live-doc-items">
+                        ${items.map(item => {
+                            const isNew = !prevItems.includes(item);
+                            return `<li class="${isNew ? 'live-doc-new-item' : ''}">${escapeHtml(item)}</li>`;
+                        }).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        content.innerHTML = html || `
+            <div class="live-doc-empty">
+                <i class="fas fa-pencil-alt"></i>
+                <p>${i18n[state.lang].live_doc_empty}</p>
+            </div>
+        `;
+
+        // Store deep copy for diff tracking
+        state.previousSummary = JSON.parse(JSON.stringify(summary));
+
+        // Auto-scroll to newest item
+        const newItems = content.querySelectorAll('.live-doc-new-item');
+        if (newItems.length > 0) {
+            newItems[newItems.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        return;
+    }
+
+    // Legacy: string summary (backward compatible)
+    const stageLabel = stageLabels[stage] || stage;
+
+    content.innerHTML = `
+        <div class="live-doc-section">
+            <div class="live-doc-stage-badge">
+                <i class="fas fa-circle-dot"></i> ${escapeHtml(stageLabel)}
+            </div>
+            <div class="live-doc-text" dir="${detectTextDirection(String(summary))}">${formatAnswerHtml(String(summary)) || escapeHtml(String(summary))}</div>
+        </div>
+    `;
+}
+
+// --- Authentication ---
+
+function showAuthScreen() {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('app-container').style.display = 'none';
+
+    // Tab switching
+    document.querySelectorAll('.auth-tab').forEach(tab => {
+        tab.onclick = () => {
+            document.querySelectorAll('.auth-tab').forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const isLogin = tab.dataset.tab === 'login';
+            document.getElementById('login-form').style.display = isLogin ? 'block' : 'none';
+            document.getElementById('register-form').style.display = isLogin ? 'none' : 'block';
+            document.getElementById('auth-error').style.display = 'none';
+        };
+    });
+
+    // Login
+    document.getElementById('login-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const email = document.getElementById('login-email').value.trim();
+        const password = document.getElementById('login-password').value;
+        const errorEl = document.getElementById('auth-error');
+        errorEl.style.display = 'none';
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Login failed');
+            }
+            const data = await res.json();
+            setAuthState(data.token, data.user);
+            showApp();
+        } catch (err) {
+            errorEl.textContent = err.message;
+            errorEl.style.display = 'block';
+        }
+    };
+
+    // Register
+    document.getElementById('register-form').onsubmit = async (e) => {
+        e.preventDefault();
+        const name = document.getElementById('register-name').value.trim();
+        const email = document.getElementById('register-email').value.trim();
+        const password = document.getElementById('register-password').value;
+        const errorEl = document.getElementById('auth-error');
+        errorEl.style.display = 'none';
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, email, password })
+            });
+            if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.detail || 'Registration failed');
+            }
+            const data = await res.json();
+            setAuthState(data.token, data.user);
+            showApp();
+        } catch (err) {
+            errorEl.textContent = err.message;
+            errorEl.style.display = 'block';
+        }
+    };
+}
+
+function setAuthState(token, user) {
+    state.authToken = token;
+    state.currentUser = user;
+    localStorage.setItem('authToken', token);
+    localStorage.setItem('currentUser', JSON.stringify(user));
+}
+
+function clearAuthState() {
+    state.authToken = null;
+    state.currentUser = null;
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('currentUser');
+}
+
+function showApp() {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('app-container').style.display = 'flex';
+
+    // Update sidebar user info
+    const avatarEl = document.getElementById('user-avatar');
+    const nameEl = document.getElementById('user-name');
+    if (state.currentUser) {
+        if (avatarEl) avatarEl.textContent = state.currentUser.name.charAt(0).toUpperCase();
+        if (nameEl) nameEl.textContent = state.currentUser.name;
+    }
+
+    // Logout handler
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.onclick = () => {
+            clearAuthState();
+            showAuthScreen();
+        };
+    }
+}
+
 // --- Initialization ---
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Check authentication
+    if (state.authToken && state.currentUser) {
+        showApp();
+    } else {
+        showAuthScreen();
+    }
+
     // Nav Clicks
     elements.navItems.forEach(item => {
         item.onclick = () => {
@@ -1337,6 +2392,10 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.classList.add('light-theme');
         document.body.classList.remove('dark-theme');
         elements.themeToggle.querySelector('i').className = 'fas fa-sun';
+    } else {
+        document.body.classList.add('dark-theme');
+        document.body.classList.remove('light-theme');
+        elements.themeToggle.querySelector('i').className = 'fas fa-moon';
     }
 
     // Initial View

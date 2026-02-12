@@ -187,10 +187,10 @@ Answer:"""
     def _extract_sources(self, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Extract source information from chunks.
-        
+
         Args:
             chunks: List of chunk dictionaries
-            
+
         Returns:
             List of source information
         """
@@ -203,5 +203,77 @@ Answer:"""
                 'similarity': chunk.get('similarity', 0.0),
                 'asset_id': chunk.get('asset_id')
             })
-        
+
         return sources
+
+    # ------------------------------------------------------------------
+    # No-context fallback (LLM-only mode when no documents are uploaded)
+    # ------------------------------------------------------------------
+
+    async def generate_answer_no_context(
+        self,
+        query: str,
+        language: str = "ar",
+    ) -> Dict[str, Any]:
+        """Generate answer using LLM general knowledge when no documents exist."""
+        try:
+            prompt = self._build_no_context_prompt(query, language)
+            answer = await self.llm_provider.generate_text(
+                prompt=prompt,
+                temperature=0.7,
+                max_tokens=25000,
+            )
+            return {
+                'answer': answer.strip(),
+                'sources': [],
+                'context_used': 0,
+            }
+        except Exception as e:
+            logger.error(f"Error generating no-context answer: {str(e)}")
+            raise
+
+    async def generate_answer_no_context_stream(
+        self,
+        query: str,
+        language: str = "ar",
+    ) -> AsyncIterator[str]:
+        """Stream answer tokens using LLM general knowledge when no documents exist."""
+        try:
+            prompt = self._build_no_context_prompt(query, language)
+            async for token in self.llm_provider.generate_text_stream(
+                prompt=prompt,
+                temperature=0.7,
+                max_tokens=25000,
+            ):
+                yield token
+        except Exception as e:
+            logger.error(f"Error streaming no-context answer: {str(e)}")
+            raise
+
+    @staticmethod
+    def _build_no_context_prompt(query: str, language: str) -> str:
+        """Build prompt for LLM-only mode (no document context available)."""
+        if language == "ar":
+            return f"""أنت مساعد ذكي ذو معرفة واسعة. لم يتم رفع أي مستندات لهذا المشروع، لذا لا يمكنك الإشارة إلى أي مصادر محددة.
+أجب عن سؤال المستخدم باستخدام معرفتك العامة. كن مفيدًا ودقيقًا ومهنيًا.
+القواعد:
+1) أجب من معرفتك العامة بوضوح وإيجاز.
+2) لا تستشهد بأي مصادر (لا توجد مصادر متاحة).
+3) إذا لم تكن متأكدًا من شيء ما، قل ذلك بصراحة.
+4) حافظ على وضوح ومهنية الإجابة.
+5) استخدم العربية الفصحى.
+
+السؤال: {query}
+
+الإجابة:"""
+        return f"""You are a knowledgeable AI assistant. No documents have been uploaded for this project, so you cannot reference any specific sources.
+Answer the user's question using your general knowledge. Be helpful, accurate, and professional.
+Rules:
+1) Answer from your general knowledge clearly and concisely.
+2) Do NOT cite any sources (there are none available).
+3) If you are uncertain about something, say so honestly.
+4) Keep the response clear and professional.
+
+Question: {query}
+
+Answer:"""

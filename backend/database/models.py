@@ -12,6 +12,21 @@ from datetime import datetime
 Base = declarative_base()
 
 
+class User(Base):
+    """User model for authentication."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    role = Column(String(50), default="user")  # user, admin
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<User(id={self.id}, email='{self.email}')>"
+
+
 class Project(Base):
     """Project model for organizing documents."""
     __tablename__ = "projects"
@@ -103,3 +118,47 @@ class Chunk(Base):
 
     def __repr__(self):
         return f"<Chunk(id={self.id}, asset_id={self.asset_id}, chunk_index={self.chunk_index})>"
+
+
+class ChatMessage(Base):
+    """Chat message model for project conversations."""
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String(50), nullable=False)  # user, assistant, system
+    content = Column(Text, nullable=False)
+    extra_metadata = Column("metadata", JSON, default={})
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    project = relationship("Project")
+
+    __table_args__ = (
+        Index('ix_chat_messages_project_created', 'project_id', 'created_at'),
+    )
+
+    def __repr__(self):
+        return f"<ChatMessage(id={self.id}, project_id={self.project_id}, role='{self.role}')>"
+
+
+class SRSDraft(Base):
+    """SRS draft model for project requirements summaries."""
+    __tablename__ = "srs_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    version = Column(Integer, nullable=False, default=1)
+    status = Column(String(50), default="draft")
+    language = Column(String(10), default="ar")
+    content = Column(JSON, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project")
+
+    __table_args__ = (
+        Index('ix_srs_drafts_project_version', 'project_id', 'version'),
+    )
+
+    def __repr__(self):
+        return f"<SRSDraft(id={self.id}, project_id={self.project_id}, version={self.version})>"

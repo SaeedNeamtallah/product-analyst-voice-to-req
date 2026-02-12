@@ -57,12 +57,11 @@ class QueryController:
             )
             
             if not similar_chunks:
-                return {
-                    'answer': 'لم أتمكن من العثور على معلومات ذات صلة في المستندات.' if language == 'ar' 
-                             else 'Could not find relevant information in the documents.',
-                    'sources': [],
-                    'context_used': 0
-                }
+                logger.info("No chunks found, falling back to LLM-only mode")
+                return await self.answer_service.generate_answer_no_context(
+                    query=query,
+                    language=language,
+                )
             
             # Generate answer
             result = await self.answer_service.generate_answer(
@@ -105,13 +104,13 @@ class QueryController:
             )
 
             if not similar_chunks:
-                no_info = (
-                    "لم أتمكن من العثور على معلومات ذات صلة في المستندات."
-                    if language == "ar"
-                    else "Could not find relevant information in the documents."
-                )
+                logger.info("No chunks found, falling back to LLM-only streaming mode")
                 yield f"data: {json.dumps({'type': 'sources', 'sources': [], 'context_used': 0})}\n\n"
-                yield f"data: {json.dumps({'type': 'token', 'token': no_info})}\n\n"
+                async for token in self.answer_service.generate_answer_no_context_stream(
+                    query=query,
+                    language=language,
+                ):
+                    yield f"data: {json.dumps({'type': 'token', 'token': token}, ensure_ascii=False)}\n\n"
                 yield "data: [DONE]\n\n"
                 return
 

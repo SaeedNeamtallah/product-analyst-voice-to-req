@@ -11,9 +11,9 @@ import json
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
     
-    # Database Configuration (Docker on port 5435)
+    # Database Configuration (Docker on port 5555)
     database_url: str = Field(
-        default="postgresql+asyncpg://ragmind:ragmind123@localhost:5435/ragmind",
+        default="postgresql+asyncpg://ragmind:ragmind123@localhost:5555/ragmind",
         alias="DATABASE_URL"
     )
     
@@ -112,6 +112,7 @@ class Settings(BaseSettings):
     # Storage Configuration
     upload_dir: str = Field(default="./uploads", alias="UPLOAD_DIR")
     max_file_size_mb: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
+    stt_max_file_size_mb: int = Field(default=500, alias="STT_MAX_FILE_SIZE_MB")
     
     # Chunking Configuration
     chunk_size: int = Field(default=1000, alias="CHUNK_SIZE")
@@ -148,6 +149,11 @@ class Settings(BaseSettings):
     
     # Logging
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    # Authentication
+    jwt_secret: str = Field(default="ragmind-secret-change-me-in-production", alias="JWT_SECRET")
+    jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
+    jwt_expiry_hours: int = Field(default=72, alias="JWT_EXPIRY_HOURS")
     
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -96,6 +96,8 @@ if exist ".env.example" (
     echo [!] Please edit .env and add:
     echo     - DATABASE_URL
     echo     - GEMINI_API_KEY
+    echo     - GROQ_API_KEY (for speech-to-text)
+    echo     - JWT_SECRET (change for production!)
     echo     - TELEGRAM_BOT_TOKEN (optional)
 ) else (
     echo [WARNING] .env.example not found
@@ -199,6 +201,8 @@ echo    - Run: start_docker.bat
 echo.
 echo 2. Edit the .env file and add:
 echo    - GEMINI_API_KEY (required)
+echo    - GROQ_API_KEY (for speech-to-text)
+echo    - JWT_SECRET (change in production!)
 echo    - TELEGRAM_BOT_TOKEN (optional)
 echo    - DATABASE_URL is pre-configured for Docker
 echo.
