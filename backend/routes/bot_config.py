@@ -2,13 +2,15 @@
 Bot Configuration Routes.
 API endpoints for configuring the Telegram bot.
 """
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
 from pydantic import BaseModel
 from typing import Optional
 import json
 import os
 import httpx
 from telegram_bot.config import bot_settings
+from backend.database.models import User
+from backend.routes.auth import get_current_user
 
 router = APIRouter(prefix="/bot", tags=["Bot Config"])
 
@@ -16,6 +18,12 @@ CONFIG_FILE = "bot_config.json"
 
 class BotConfig(BaseModel):
     active_project_id: Optional[int] = None
+
+
+def _require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -31,12 +39,12 @@ def save_config(config):
         json.dump(config, f)
 
 @router.get("/config")
-async def get_bot_config():
+async def get_bot_config(_user: User = Depends(_require_admin)):
     """Get current bot configuration."""
     return load_config()
 
 @router.post("/config")
-async def update_bot_config(config: BotConfig):
+async def update_bot_config(config: BotConfig, _user: User = Depends(_require_admin)):
     """Update bot configuration (active project)."""
     current_config = load_config()
     if config.active_project_id is not None:
@@ -47,6 +55,7 @@ async def update_bot_config(config: BotConfig):
 @router.post("/profile")
 async def update_bot_profile(
     name: str = Form(...),
+    _user: User = Depends(_require_admin),
     # image: UploadFile = File(None) # Image upload to be implemented if needed
 ):
     """

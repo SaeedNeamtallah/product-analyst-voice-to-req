@@ -11,7 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backend.database import init_db
+from backend.database.models import User
 from backend.config import settings
+import bcrypt
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +26,7 @@ async def create_database_if_not_exists():
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     
     # Parse connection string to get credentials for default 'postgres' db
-    # Example: postgresql+asyncpg://postgres:Ezz123456@localhost:5432/ragmind
+    # Example: postgresql+asyncpg://ragmind:ragmind123@localhost:5555/ragmind
     db_url = settings.database_url.replace("postgresql+asyncpg://", "")
     auth, rest = db_url.split("@")
     user, password = auth.split(":")
@@ -62,6 +64,29 @@ async def create_database_if_not_exists():
         # We continue anyway, maybe it exists but we couldn't check
 
 
+async def create_default_user():
+    """Create a default admin user if it doesn't exist."""
+    from sqlalchemy import select
+    from backend.database.connection import async_session_maker
+
+    async with async_session_maker() as session:
+        result = await session.execute(select(User).where(User.email == "admin@ragmind.com"))
+        if result.scalar_one_or_none() is not None:
+            logger.info("Default admin user already exists")
+            return
+
+        password_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        user = User(
+            name="Admin",
+            email="admin@ragmind.com",
+            password_hash=password_hash,
+            role="admin"
+        )
+        session.add(user)
+        await session.commit()
+        logger.info("✅ Default admin user created (admin@ragmind.com / admin123)")
+
+
 async def main():
     """Initialize database."""
     try:
@@ -72,7 +97,7 @@ async def main():
         
         # Step 2: Initialize tables and extensions
         await init_db()
-        
+
         logger.info("✅ Database initialized successfully!")
         logger.info("Tables created:")
         logger.info("  - projects")
@@ -80,6 +105,9 @@ async def main():
         logger.info("  - chunks (with vector embeddings)")
         logger.info("Extensions enabled:")
         logger.info("  - pgvector")
+
+        # Step 3: Create default admin user if no users exist
+        await create_default_user()
         
         return 0
         

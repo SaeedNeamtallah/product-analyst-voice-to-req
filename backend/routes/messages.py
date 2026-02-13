@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
@@ -71,3 +71,12 @@ async def add_messages(project_id: int, payload: MessagesRequest, db: AsyncSessi
         db.add(record)
 
     return {"success": True, "count": len(payload.messages)}
+
+
+@router.delete("/projects/{project_id}/messages")
+async def clear_messages(project_id: int, db: AsyncSession = Depends(get_db)):
+    """Delete all chat messages for a project."""
+    stmt = delete(ChatMessage).where(ChatMessage.project_id == project_id)
+    result = await db.execute(stmt)
+    deleted = int(result.rowcount or 0)
+    return {"success": True, "deleted": deleted}

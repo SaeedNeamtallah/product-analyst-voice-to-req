@@ -15,7 +15,7 @@ class BotSettings(BaseSettings):
     
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_admin_id: str = Field(default="", alias="TELEGRAM_ADMIN_ID")
-    api_base_url: str = Field(default="http://localhost:8000", alias="API_BASE_URL")
+    api_base_url: str = Field(default="http://localhost:8500", alias="API_BASE_URL")
     
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

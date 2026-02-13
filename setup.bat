@@ -210,7 +210,7 @@ echo 3. To run the project:
 echo    - Start Backend: start_backend.bat
 echo    - Start Telegram Bot: start_telegram_bot.bat (optional)
 echo.
-echo 4. Open your browser at: http://localhost:8000
+echo 4. Open your browser at: http://localhost:3000
 echo.
 echo ========================================
 echo 📚 For more information, see README.md

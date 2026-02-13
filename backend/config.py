@@ -132,8 +132,8 @@ class Settings(BaseSettings):
     query_rewrite_enabled: bool = Field(default=False, alias="QUERY_REWRITE_ENABLED")
     
     # API Configuration
-    api_host: str = Field(default="0.0.0.0", alias="API_HOST")
-    api_port: int = Field(default=8000, alias="API_PORT")
+    api_host: str = Field(default="127.0.0.1", alias="API_HOST")
+    api_port: int = Field(default=8500, alias="API_PORT")
     api_title: str = Field(default="RAGMind API", alias="API_TITLE")
     api_version: str = Field(default="1.0.0", alias="API_VERSION")
     
@@ -143,7 +143,7 @@ class Settings(BaseSettings):
     
     # CORS Configuration
     cors_origins: List[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"],
+        default=["http://localhost:3000", "http://localhost:8500"],
         alias="CORS_ORIGINS"
     )
     

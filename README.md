@@ -1,376 +1,372 @@
-# RAGMind - AI Business Analyst & Document Intelligence Platform
+# RAGMind — Full Technical Autopsy & Master Documentation
 
-![Project Status](https://img.shields.io/badge/Status-Active-success)
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.68%2B-green)
-![Gemini](https://img.shields.io/badge/AI-Google%20Gemini-orange)
-![License](https://img.shields.io/badge/License-MIT-purple)
-
-**RAGMind** is an enterprise-grade platform that combines **Retrieval-Augmented Generation (RAG)** with an **AI Business Analyst** agent. It transforms static documents into interactive knowledge bases while providing guided requirements gathering, SRS generation, and project handoff capabilities for B2B SaaS workflows.
-
-Built for the **EELU University Project**, this system bridges the gap between raw data and actionable intelligence.
+> Version: February 2026  
+> Scope: Backend + Frontend + Runtime Logic + UX + Agentic Prompting
 
 ---
 
-## Key Features
+## تقرير العيوب والنواقص
 
-### Core RAG Pipeline
-- **Multi-format document support** - PDF, DOCX, TXT upload with drag-and-drop
-- **Smart chunking** - Parent-child chunking strategy with configurable sizes
-- **Multi-provider embeddings** - Gemini, Cohere, Voyage AI, BGE-M3 (HuggingFace)
-- **Hybrid vector search** - pgvector and Qdrant with optional reranking
-- **Streaming AI answers** - Server-Sent Events (SSE) with source citations
+### 1) Business Logic Roast (Brutal, because it is deserved)
 
-### AI Business Analyst
-- **Guided interview mode** - 5-stage requirements gathering (discovery, scope, users, features, constraints)
-- **Co-pilot split-screen** - Live document panel updates alongside chat conversation
-- **SRS generation** - Auto-generate Software Requirements Specification from conversations
-- **PDF export** - Export SRS documents with bilingual support
-- **Project handoff** - Package SRS + conversation summary for engineering teams
+- The product promise says “document-grounded RAG”, but the runtime has a **no-context fallback** that answers from general model knowledge when no chunks are found. That is a trust-risk unless explicitly surfaced every time.
+- Interview flow is ambitious (coverage, contradiction detection, cumulative summary), but it relies on strict JSON compliance from LLM output. You have parser fallback, yes, but the contract is still fragile and can silently drift.
+- Project ownership is the biggest red flag: many core routes are not scoped by user identity. This is not a “nice-to-have” bug; this is an access model gap.
+- Error handling frequently returns `detail=str(e)` from internal exceptions. Congratulations, now your API can leak internals by design.
+- You are mixing deterministic workflow and probabilistic LLM logic without hard guardrails (state machine constraints, validation schemas, retry policy by failure type).
 
-### Voice & Multilingual
-- **Speech-to-text** - Groq Whisper integration supporting 18 languages
-- **Microphone input** - Browser-based audio recording in chat
-- **Bilingual UI** - Full Arabic (RTL) / English (LTR) switching with 80+ i18n keys
+### 2) UI/UX Roast
 
-### User Experience
-- **JWT authentication** - Register/login with secure token-based auth
-- **Dark/light theme** - Full theme toggle with persistence
-- **Mobile responsive** - Hamburger menu, responsive grids
-- **Runtime configuration** - Switch LLM/embedding providers via UI without restart
-- **Telegram bot** - Optional bot integration for queries via Telegram
+- Frontend behavior is concentrated in a single oversized file (`frontend/app.js` ~3.5k lines). This is not maintainability; this is operational debt with syntax highlighting.
+- The app has multiple advanced modes (chat, interview, SRS, config), but information architecture still feels mode-switch heavy and context-fragile.
+- UX consistency suffered from repeated stylesheet resets (`git checkout -- frontend/style.css`) — your process currently allows accidental regression of critical interaction design.
+- Accessibility is visibly under-engineered (ARIA, labels, semantic controls warnings are present).
+- The product tries to be enterprise-grade while key UX states still depend on brittle DOM event chains.
+
+### 3) Architecture Roast
+
+- This is a **modular monolith**, not microservices. That is fine, but call it what it is.
+- Separation between routes/controllers/services exists, but authentication/authorization boundaries are inconsistent across endpoints.
+- Runtime provider switching is strong, but provider abstraction does not eliminate failure-mode complexity (token limits, malformed model output, stream interruption).
+- Security defaults are too permissive for any serious deployment (`allow_origins=["*"]`, weak default JWT secret).
+
+### Missing Information (and yes, this is a problem)
+
+You did not provide explicit SLAs, target throughput, expected tenant model, or compliance constraints. Without these, architecture decisions cannot be validated beyond “works on my machine”. For a production-grade system, this is unacceptable ambiguity.
 
 ---
 
-## System Architecture
+## 1. Project Overview & Business Logic
+
+### What the project is
+
+RAGMind is an AI-assisted requirements platform that combines:
+
+1. Document ingestion + chunking + vector indexing
+2. Retrieval-Augmented Q&A (regular and streaming)
+3. Guided requirements interview (business-analyst style)
+4. SRS draft generation + PDF export
+
+### Value Proposition
+
+- Converts unstructured project documents into queryable knowledge.
+- Helps teams gather requirements with structured interview guidance.
+- Produces a draft SRS artifact directly from conversation evidence.
+
+### Core Business Flow (Input → Output)
+
+1. User creates project.
+2. User uploads documents.
+3. Backend extracts text, chunks content, generates embeddings, stores vectors.
+4. User asks question.
+5. Backend retrieves top-k chunks and generates answer with citations.
+6. User can run guided interview mode for structured requirement elicitation.
+7. Backend generates SRS draft from message history.
+8. User exports PDF and hands off to engineering.
+
+---
+
+## 2. Architecture & Tech Stack
+
+### Architecture Pattern
+
+**Pattern:** Modular Monolith (Layered)
+
+**Why this classification is accurate:**
+
+- Single deployable FastAPI app.
+- Clear route/controller/service structure.
+- Shared database and shared runtime configuration.
+- No independent service boundaries, no service mesh, no async choreography between deployable units.
+
+### Backend
+
+- **Language:** Python
+- **Framework:** FastAPI
+- **ORM:** SQLAlchemy Async
+- **Database:** PostgreSQL (+ pgvector extension)
+- **Optional Vector DB:** Qdrant
+- **Auth:** JWT + bcrypt
+- **LLM/Embedding Providers:** Gemini, OpenRouter, Groq, Cerebras, Cohere, Voyage, HF (config-driven)
+- **PDF:** fpdf2
+
+**Rationale for DB stack:**
+
+- PostgreSQL gives transactional persistence for business entities.
+- pgvector/Qdrant gives semantic retrieval capability for RAG use cases.
+
+### Frontend
+
+- **Stack:** Vanilla HTML/CSS/JavaScript (no bundler)
+- **State management:** In-file app state object + imperative DOM updates (`frontend/app.js`)
+- **Strength:** zero-build simplicity.
+- **Tradeoff:** growing complexity and weaker long-term maintainability.
+
+### System Boundaries
+
+- **Backend:** API orchestration, retrieval, prompt orchestration, persistence.
+- **Frontend:** rendering, interaction, local cache helpers, route/view switching.
+- **Current gap:** access-control enforcement is not uniformly applied across core routes.
+
+---
+
+## 3. Software Engineering Diagrams (Mermaid.js)
+
+### A) Activity Diagram — End-to-End User Journey
 
 ```mermaid
-graph TD
-    subgraph Frontend ["User Interfaces"]
-        UI[Web Dashboard]
-        TG[Telegram Bot]
-    end
+flowchart TD
+    A[Login/Register] --> B[Create or Select Project]
+    B --> C[Upload Documents]
+    C --> D[Background Processing: Extract -> Chunk -> Embed -> Index]
+    D --> E{Choose Mode}
+    E -->|Chat| F[Ask Question]
+    F --> G[Retrieve Top-K Chunks]
+    G --> H[Generate Answer + Sources]
+    H --> I[Persist Chat Messages]
+    E -->|Interview| J[Get Next Interview Question]
+    J --> K[User Answers]
+    K --> L[Update Summary/Coverage]
+    L --> M{Coverage Complete?}
+    M -->|No| J
+    M -->|Yes| N[Generate/Refresh SRS Draft]
+    N --> O[Review SRS]
+    O --> P[Export PDF / Handoff]
+```
 
-    subgraph Backend ["FastAPI Application Layer"]
-        API[API Routes]
-        Auth[JWT Auth]
+### B) Sequence Diagram — User → UI → Backend → Database
 
-        subgraph Services ["Core Services"]
-            Loader[Document Loader]
-            Chunker[Text Splitter]
-            Embedder[Embedding Service]
-            Retriever[Query Service]
-            GenAI[LLM Answer Service]
-            Interview[Interview Service]
-            SRS[SRS Service]
-            STT[STT Service]
-        end
-    end
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant UI as Frontend UI
+    participant API as FastAPI Backend
+    participant VDB as Vector DB (pgvector/Qdrant)
+    participant DB as PostgreSQL
+    participant LLM as LLM Provider
 
-    subgraph Data ["Persistence Layer"]
-        PG[(PostgreSQL + pgvector)]
-        FS[File Storage]
-        Qdrant[(Qdrant Vector DB)]
-    end
+    U->>UI: Ask question
+    UI->>API: POST /projects/{id}/query/stream
+    API->>VDB: Search similar chunks (top-k)
+    VDB-->>API: Chunk candidates + scores
+    API->>LLM: Prompt(query + context)
+    LLM-->>API: Stream tokens
+    API-->>UI: SSE tokens + source event
+    UI->>API: POST /projects/{id}/messages
+    API->>DB: Insert chat messages
+    DB-->>API: Commit OK
+    API-->>UI: success
+```
 
-    UI -->|HTTP/REST| API
-    TG -->|Webhook| API
+### C) Class Diagram (Conceptual Core Entities)
 
-    API --> Auth
-    Auth --> Services
+```mermaid
+classDiagram
+    class User {
+      +int id
+      +string name
+      +string email
+      +string password_hash
+      +string role
+      +datetime created_at
+    }
 
-    Loader -->|Raw Text| Chunker
-    Chunker -->|Chunks| Embedder
-    Embedder -->|Vectors| PG
-    Embedder -->|Vectors| Qdrant
+    class Project {
+      +int id
+      +string name
+      +string description
+      +json metadata
+      +datetime created_at
+      +datetime updated_at
+    }
 
-    Retriever <-->|Semantic Search| PG
-    Retriever <-->|Semantic Search| Qdrant
+    class Asset {
+      +int id
+      +int project_id
+      +string filename
+      +string original_filename
+      +string file_path
+      +int file_size
+      +string file_type
+      +string status
+      +json metadata
+    }
 
-    GenAI <-->|Inference| Gemini[Google Gemini API]
-    STT <-->|Whisper| Groq[Groq API]
+    class Chunk {
+      +int id
+      +int project_id
+      +int asset_id
+      +text content
+      +int chunk_index
+      +json embedding
+      +json metadata
+    }
+
+    class ChatMessage {
+      +int id
+      +int project_id
+      +string role
+      +text content
+      +json metadata
+      +datetime created_at
+    }
+
+    class SRSDraft {
+      +int id
+      +int project_id
+      +int version
+      +string status
+      +string language
+      +json content
+      +datetime created_at
+      +datetime updated_at
+    }
+
+    Project "1" --> "*" Asset
+    Project "1" --> "*" Chunk
+    Project "1" --> "*" ChatMessage
+    Project "1" --> "*" SRSDraft
+    Asset "1" --> "*" Chunk
+```
+
+### D) Agents Diagram (Prompted Components)
+
+```mermaid
+flowchart LR
+    Q[QueryService] --> RW[Query Rewrite Agent]
+    Q --> R[Retriever]
+    R --> A[Answer Agent]
+    I[InterviewService] --> BA[Business Analyst Agent]
+    I --> SA[Suggested Answers Agent]
+    S[SRSService] --> SG[SRS Generator Agent]
 ```
 
 ---
 
-## Technical Pipeline
+## 4. UI/UX Philosophy
 
-### Phase 1: Ingestion & Chunking
-1. **File Upload** - Supports PDF, DOCX, TXT. Validated for MIME type and size.
-2. **Text Extraction** - Content stripped of non-printable characters.
-3. **Parent-Child Chunking** -
-   - Parent chunks: `3000` chars with `600` overlap
-   - Child chunks: `1000` chars with `200` overlap
-   - Strategy configurable via `CHUNK_STRATEGY` env var
+### Design System (as implemented)
 
-### Phase 2: Vectorization
-- **Providers**: Gemini (`gemini-embedding-001`), Cohere (`embed-multilingual-v3.0`), Voyage AI (`voyage-3-large`), BGE-M3
-- **Batching**: Configurable batch size and concurrency for rate limit compliance
-- **Storage**: pgvector (PostgreSQL extension) or Qdrant
+- Warm-neutral palette in light mode, high-contrast dark mode override.
+- Accent-driven identity (`--accent-primary`, `--accent-secondary`).
+- Mixed modern typography (`Space Grotesk` + `IBM Plex Sans Arabic`).
+- Visual style: semi-glass cards + rounded components + soft shadows.
 
-### Phase 3: Retrieval & Generation
-1. **Query Embedding** - Same embedding model as indexing
-2. **Similarity Search** - Cosine similarity, configurable top-K (default: 5, max: 20)
-3. **Optional Hybrid Search** - Dense + sparse retrieval with configurable alpha
-4. **Optional Reranking** - Post-retrieval reranking for precision
-5. **Streaming Generation** - Gemini / OpenRouter / Groq / Cerebras via SSE
+### UX Decisions
 
-### Phase 4: Interview & SRS (AI Business Analyst)
-1. **Interview Mode** - Guided 5-stage conversation with the client
-2. **Live Document** - Real-time summary of gathered requirements
-3. **SRS Generation** - Structured document from conversation history
-4. **Review & Edit** - Inline editing of SRS sections
-5. **Handoff** - Package and deliver to engineering team
+- Sidebar-first navigation: optimized for feature-rich desktop flow.
+- Chat-first interaction model with optional interview mode for structured elicitation.
+- Live draft mentality: users iterate between discussion and SRS refinement.
+- Persona target: business analyst / product owner / technical founder working in Arabic or English.
+
+### UX Risks
+
+- Single-page imperative DOM logic increases regression likelihood.
+- Accessibility quality is currently below enterprise expectations.
+- Dense feature set can overload first-time users without stronger progressive disclosure.
 
 ---
 
-## Tech Stack
-
-| Component | Technology | Description |
-|-----------|------------|-------------|
-| **Backend** | **FastAPI** | High-performance async Python framework |
-| **LLM Providers** | **Gemini, OpenRouter, Groq, Cerebras** | Factory pattern - switchable at runtime |
-| **Embeddings** | **Gemini, Cohere, Voyage AI, BGE-M3** | Multi-provider with batch processing |
-| **Vector DB** | **pgvector / Qdrant** | Configurable vector storage |
-| **ORM** | **SQLAlchemy (async)** | Async database with 6 models |
-| **Auth** | **PyJWT + bcrypt** | JWT token authentication |
-| **STT** | **Groq Whisper** | Speech-to-text for 18 languages |
-| **PDF Export** | **fpdf2** | SRS document export |
-| **Frontend** | **Vanilla JS/CSS** | Lightweight, no build step |
-
----
-
-## Installation & Setup
+## 5. Installation & Setup
 
 ### Prerequisites
+
 - Python 3.8+
-- [uv](https://docs.astral.sh/uv/) (fast Python package installer)
-- Docker Desktop (recommended for PostgreSQL + Qdrant)
-- Google Gemini API Key
+- `uv` package manager
+- Docker Desktop (recommended)
+- API keys (at minimum: Gemini)
 
-### Quick Start (Windows)
+### Local Development (Windows)
 
-1. **Clone & Setup**:
-   ```powershell
-   git clone https://github.com/ZozElwakil/RAGMind---EELU-Project.git
-   cd RAGMind---EELU-Project
-   .\setup.bat
-   ```
-   This script creates the virtual environment, installs requirements, sets up `.env`, starts Docker containers, and initializes the database.
-
-2. **Configure Environment**:
-   Open `.env` and set the required keys:
-   ```env
-   # Required
-   GEMINI_API_KEY=AIzaSy...
-   DATABASE_URL=postgresql+asyncpg://ragmind:ragmind123@localhost:5555/ragmind
-
-   # Authentication (change in production!)
-   JWT_SECRET=your-secure-secret-here
-
-   # Optional - Speech-to-Text
-   GROQ_API_KEY=gsk_...
-
-   # Optional - Alternative embedding providers
-   COHERE_API_KEY=...
-   VOYAGE_API_KEY=...
-   ```
-
-3. **Start Docker Services**:
-   ```powershell
-   .\start_docker.bat
-   ```
-
-4. **Run the Application**:
-   ```powershell
-   .\start_backend.bat
-   ```
-
-5. Visit **http://localhost:8000** - Register an account and start using RAGMind.
-
----
-
-## Environment Variables
-
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | `postgresql+asyncpg://ragmind:ragmind123@localhost:5555/ragmind` | PostgreSQL connection string |
-| `GEMINI_API_KEY` | Yes | - | Google Gemini API key |
-| `JWT_SECRET` | Yes (prod) | `ragmind-secret-change-me-in-production` | Secret for JWT token signing |
-| `JWT_ALGORITHM` | No | `HS256` | JWT signing algorithm |
-| `JWT_EXPIRY_HOURS` | No | `72` | Token expiry in hours |
-| `LLM_PROVIDER` | No | `gemini` | LLM provider selection |
-| `GEMINI_MODEL` | No | `gemini-2.5-flash` | Gemini model name |
-| `EMBEDDING_PROVIDER` | No | `gemini` | Embedding provider (gemini/cohere/voyage/hf) |
-| `VECTOR_DB_PROVIDER` | No | `pgvector` | Vector DB (pgvector/qdrant) |
-| `GROQ_API_KEY` | No | - | Groq API key for STT (Whisper) |
-| `COHERE_API_KEY` | No | - | Cohere API key for embeddings |
-| `VOYAGE_API_KEY` | No | - | Voyage AI API key for embeddings |
-| `CHUNK_SIZE` | No | `1000` | Text chunk size |
-| `CHUNK_OVERLAP` | No | `200` | Chunk overlap |
-| `CHUNK_STRATEGY` | No | `parent_child` | Chunking strategy |
-| `RETRIEVAL_TOP_K` | No | `5` | Number of results to retrieve |
-| `LOG_LEVEL` | No | `INFO` | Logging level |
-| `TELEGRAM_BOT_TOKEN` | No | - | Telegram bot token |
-
-See `.env.example` for the full list with descriptions.
-
----
-
-## API Endpoints
-
-### Authentication
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/auth/register` | Register new user (name, email, password) |
-| POST | `/auth/login` | Login and receive JWT token |
-| GET | `/auth/me` | Get current user info (requires Bearer token) |
-
-### Projects
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/projects` | List all projects |
-| POST | `/projects` | Create new project |
-| GET | `/projects/{id}` | Get project details |
-| PUT | `/projects/{id}` | Update project |
-| DELETE | `/projects/{id}` | Delete project |
-
-### Documents
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/projects/{id}/documents` | Upload document |
-| GET | `/projects/{id}/documents` | List project documents |
-| POST | `/documents/{id}/process` | Process (chunk + embed) document |
-| DELETE | `/documents/{id}` | Delete document |
-
-### Query & Chat
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/query` | RAG query with streaming response (SSE) |
-| GET | `/projects/{id}/messages` | Get chat history |
-| DELETE | `/projects/{id}/messages` | Clear chat history |
-
-### Interview & SRS
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/interview/respond` | Send message in interview mode |
-| POST | `/projects/{id}/srs/generate` | Generate SRS from conversation |
-| GET | `/projects/{id}/srs/latest` | Get latest SRS draft |
-| GET | `/projects/{id}/srs/{srs_id}/pdf` | Export SRS as PDF |
-
-### Speech-to-Text
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/stt/transcribe` | Transcribe audio file (supports 18 languages) |
-
-### Handoff
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/projects/{id}/handoff` | Create project handoff package |
-
-### Configuration
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/config` | Get current runtime configuration |
-| PUT | `/config` | Update runtime configuration |
-| GET | `/health` | Health check |
-| GET | `/stats` | System statistics |
-
----
-
-## Project Structure
-
-```
-RAGMind/
-├── backend/
-│   ├── config.py                # Pydantic settings (env vars)
-│   ├── main.py                  # FastAPI app entry point
-│   ├── database/
-│   │   ├── __init__.py          # DB engine & session
-│   │   └── models.py            # SQLAlchemy models (Project, Asset, Chunk, ChatMessage, SRSDraft, User)
-│   ├── routes/
-│   │   ├── auth.py              # JWT authentication (register/login/me)
-│   │   ├── projects.py          # Project CRUD
-│   │   ├── documents.py         # Document upload & processing
-│   │   ├── query.py             # RAG query with SSE streaming
-│   │   ├── messages.py          # Chat message history
-│   │   ├── interview.py         # Guided interview mode
-│   │   ├── srs.py               # SRS generation & PDF export
-│   │   ├── stt.py               # Speech-to-text transcription
-│   │   ├── handoff.py           # Project handoff to engineering
-│   │   ├── health.py            # Health check
-│   │   ├── stats.py             # System statistics
-│   │   ├── bot_config.py        # Telegram bot configuration
-│   │   └── app_config.py        # Runtime AI/RAG configuration
-│   ├── services/
-│   │   ├── interview_service.py # Interview stage management
-│   │   ├── srs_service.py       # SRS generation logic
-│   │   └── stt_service.py       # Audio transcription via Groq
-│   └── providers/               # LLM, Embedding, VectorDB factories
-├── frontend/
-│   ├── index.html               # Single-page application
-│   ├── app.js                   # Application logic (views, state, API)
-│   └── style.css                # Styles (dark/light theme, RTL/LTR)
-├── telegram_bot/                # Telegram bot integration
-├── uploads/                     # Document storage
-├── docker-compose.yml           # PostgreSQL + pgvector + Qdrant
-├── setup.bat                    # Full project setup script
-├── start.bat                    # Start all services
-├── start_backend.bat            # Start backend only
-├── start_docker.bat             # Start Docker containers
-└── .env.example                 # Environment variables template
+```powershell
+git clone <repo-url>
+cd RAGMind---EELU-Project
+.\setup.bat
 ```
 
----
+Then run:
 
-## Database Models
+```powershell
+.\start_backend.bat
+```
 
-| Model | Table | Description |
-|-------|-------|-------------|
-| **User** | `users` | User accounts (name, email, password_hash, role) |
-| **Project** | `projects` | Projects with name, description, language |
-| **Asset** | `assets` | Uploaded documents linked to projects |
-| **Chunk** | `chunks` | Text chunks with embeddings (pgvector) |
-| **ChatMessage** | `chat_messages` | Conversation history per project |
-| **SRSDraft** | `srs_drafts` | Generated SRS documents with versions |
+Services expected:
 
----
+- Frontend: `http://localhost:3000`
+- Backend: `http://127.0.0.1:8500`
+- API Docs: `http://127.0.0.1:8500/docs`
 
-## Usage Workflow
+### Docker Services
 
-### 1. Register & Login
-Create an account at the login screen. The JWT token is stored in localStorage.
+`docker-compose.yml` provisions:
 
-### 2. Create a Project
-Click "New Project" and provide a name, description, and language (Arabic/English).
+- PostgreSQL (pgvector image) on host port `5555`
+- Qdrant on ports `6333/6334`
 
-### 3. Upload Documents
-Drag-and-drop or click to upload PDF/DOCX/TXT files. Click "Process" to run the ingestion pipeline.
+### Required Environment Variables (minimum)
 
-### 4. Ask Questions (RAG Mode)
-Use the chat interface to ask questions about your documents. Answers stream in real-time with source citations.
-
-### 5. Interview Mode (AI Business Analyst)
-Toggle "Interview Mode" to start a guided requirements gathering session:
-- **Discovery** - Understanding the business problem
-- **Scope** - Defining project boundaries
-- **Users** - Identifying target users and personas
-- **Features** - Listing required features
-- **Constraints** - Technical and business constraints
-
-The split-screen co-pilot panel shows a live summary of gathered requirements.
-
-### 6. Generate SRS
-Navigate to the SRS tab to generate a structured Software Requirements Specification from your interview conversation. Edit sections inline and export to PDF.
-
-### 7. Handoff
-After confirming the SRS, hand off the project package (SRS + conversation summary + client info) to the engineering team.
+- `DATABASE_URL`
+- `GEMINI_API_KEY`
+- `JWT_SECRET` (must be changed for any non-local environment)
 
 ---
 
-## Contributors
+## 6. Agent Inventory (How Many, Prompts, and How They Deal)
 
-- **Abdulmoezz Elwakil** ([@ZozElwakil](https://github.com/ZozElwakil)) - Core Logic & Architecture
+### Agent Count (effective prompted components): **6**
 
-## License
-This project is licensed under the **MIT License**.
+1. **RAG Answer Agent (AR/EN)**  
+   - Source: `backend/services/answer_service.py`  
+   - Prompt style: strict context-grounded answering with inline source citations.
+
+2. **No-Context Fallback Agent (AR/EN)**  
+   - Source: `backend/services/answer_service.py`  
+   - Prompt style: general-knowledge mode when no chunks are available.
+
+3. **Query Rewrite Agent**  
+   - Source: `backend/services/query_service.py`  
+   - Prompt style: retrieval-optimization rewrite, keep intent and language.
+
+4. **Interview Business Analyst Agent (AR/EN)**  
+   - Source: `backend/services/interview_service.py`  
+   - Prompt style: validates answers, detects contradiction, tracks 5 coverage areas, outputs JSON only.
+
+5. **Interview Suggested Answers Agent (AR/EN)**  
+   - Source: `backend/services/interview_service.py`  
+   - Prompt style: generates 3–5 candidate answers for current interview question.
+
+6. **SRS Generator Agent (AR/EN)**  
+   - Source: `backend/services/srs_service.py`  
+   - Prompt style: converts conversation to structured SRS JSON (`summary/metrics/sections/questions/next_steps`).
+
+### How They Deal (Orchestration Logic)
+
+- Query pipeline: Rewrite (optional) → Embed → Retrieve → Answer (or fallback).
+- Interview pipeline: Build conversation window → BA prompt → parse JSON → enforce cumulative merge → generate suggested answers.
+- SRS pipeline: Read full chat history → generate JSON draft → persist versioned draft → export PDF.
+- Provider execution: All agents route through provider factory abstractions, enabling runtime model switching.
+
+### Hard Truth About Current Agent Reliability
+
+- Prompt engineering is advanced, but parser resilience still depends on model compliance.
+- There is no strict schema validator layer with recovery strategy per agent output type.
+- “Agentic” behavior is mostly prompt orchestration, not tool-using autonomous planning.
+
+---
+
+## 7. Technical Debt Register (Priority Order)
+
+1. **P0 — Access control model:** scope all project/document/message routes to authenticated user ownership.
+2. **P0 — Security defaults:** remove wildcard CORS and enforce production-safe config profiles.
+3. **P1 — Frontend modularization:** split `app.js` into feature modules + state store abstraction.
+4. **P1 — API error hygiene:** replace raw exception leakage with typed error contracts.
+5. **P1 — Agent output contracts:** add strict JSON schema validation + retry/fallback policy.
+6. **P2 — Observability:** structured tracing around retrieval quality, prompt latency, and parsing failures.
+7. **P2 — Accessibility:** semantic controls, labels, keyboard navigation parity, ARIA correctness.
+
+---
+
+## 8. Final Verdict
+
+This project is **high-potential but under-governed**. You built serious capabilities (RAG + interview + SRS) in one system, but governance controls (authz, modularity, reliability contracts) are lagging.  
+In enterprise terms: impressive prototype velocity, not yet production discipline.

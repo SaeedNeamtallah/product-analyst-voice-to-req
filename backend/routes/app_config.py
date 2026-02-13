@@ -2,7 +2,7 @@
 Application configuration routes.
 Exposes provider availability and runtime selections.
 """
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import Dict, List
 
@@ -10,6 +10,8 @@ from backend.config import settings
 from backend.runtime_config import get_runtime_value, update_runtime_config
 from backend.providers.llm.factory import LLMProviderFactory
 from backend.providers.vectordb.factory import VectorDBProviderFactory
+from backend.database.models import User
+from backend.routes.auth import get_current_user
 
 router = APIRouter(prefix="/config", tags=["App Config"])
 
@@ -34,7 +36,7 @@ class ProviderUpdate(BaseModel):
 
 
 @router.get("/providers")
-async def get_providers() -> Dict[str, object]:
+async def get_providers(_user: User = Depends(get_current_user)) -> Dict[str, object]:
     """Return available providers and current selections."""
     llm_available = LLMProviderFactory.get_available_providers()
     embedding_available = LLMProviderFactory.get_available_embedding_providers()
@@ -66,7 +68,7 @@ async def get_providers() -> Dict[str, object]:
 
 
 @router.post("/providers")
-async def update_providers(payload: ProviderUpdate) -> Dict[str, object]:
+async def update_providers(payload: ProviderUpdate, _user: User = Depends(get_current_user)) -> Dict[str, object]:
     """Update runtime provider selections."""
     llm_available = set(LLMProviderFactory.get_available_providers())
     embedding_available = set(LLMProviderFactory.get_available_embedding_providers())
