@@ -1,6 +1,6 @@
 {
-  "llm_provider": "groq-gpt-oss-120b",
-  "embedding_provider": "voyage",
+  "llm_provider": "gemini",
+  "embedding_provider": "gemini",
   "retrieval_top_k": 20,
   "chunk_strategy": "parent_child",
   "chunk_size": 600,

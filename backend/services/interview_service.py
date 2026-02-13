@@ -229,15 +229,33 @@ class InterviewService:
             "coverage": initial_coverage,
         }
 
-    @staticmethod
-    async def _get_project_messages(db: AsyncSession, project_id: int) -> List[ChatMessage]:
+    @staticmethod 
+    async def _get_project_messages(
+        db: AsyncSession, 
+        project_id: int, 
+        limit: int = 10  
+    ) -> List[ChatMessage]:
+        """
+        Fetches a constrained set of recent messages to maintain conversational context.
+        
+        Refactor: 2026-02-13 - Adel Sobhy OPTIMISATION
+        Optimization: Prevents linear expansion of the LLM context window by implementing 
+        a sliding window approach. Long-term state is preserved via the cumulative summary 
+        rather than raw message history.
+
+        """
+        # 1. Fetch the LATEST messages first (descending)
         stmt = (
             select(ChatMessage)
             .where(ChatMessage.project_id == project_id)
-            .order_by(ChatMessage.created_at.asc())
+            .order_by(ChatMessage.created_at.desc()) 
+            .limit(limit)
         )
         result = await db.execute(stmt)
-        return list(result.scalars().all())
+        messages = list(result.scalars().all())
+
+        # 2. Reverse them so they are in chronological order for the LLM
+        return messages[::-1]
 
     @staticmethod
     def _format_conversation(messages: List[ChatMessage]) -> str:
