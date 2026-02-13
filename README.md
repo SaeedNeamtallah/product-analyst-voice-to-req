@@ -5,36 +5,6 @@
 
 ---
 
-## تقرير العيوب والنواقص
-
-### 1) Business Logic Roast (Brutal, because it is deserved)
-
-- The product promise says “document-grounded RAG”, but the runtime has a **no-context fallback** that answers from general model knowledge when no chunks are found. That is a trust-risk unless explicitly surfaced every time.
-- Interview flow is ambitious (coverage, contradiction detection, cumulative summary), but it relies on strict JSON compliance from LLM output. You have parser fallback, yes, but the contract is still fragile and can silently drift.
-- Project ownership is the biggest red flag: many core routes are not scoped by user identity. This is not a “nice-to-have” bug; this is an access model gap.
-- Error handling frequently returns `detail=str(e)` from internal exceptions. Congratulations, now your API can leak internals by design.
-- You are mixing deterministic workflow and probabilistic LLM logic without hard guardrails (state machine constraints, validation schemas, retry policy by failure type).
-
-### 2) UI/UX Roast
-
-- Frontend behavior is concentrated in a single oversized file (`frontend/app.js` ~3.5k lines). This is not maintainability; this is operational debt with syntax highlighting.
-- The app has multiple advanced modes (chat, interview, SRS, config), but information architecture still feels mode-switch heavy and context-fragile.
-- UX consistency suffered from repeated stylesheet resets (`git checkout -- frontend/style.css`) — your process currently allows accidental regression of critical interaction design.
-- Accessibility is visibly under-engineered (ARIA, labels, semantic controls warnings are present).
-- The product tries to be enterprise-grade while key UX states still depend on brittle DOM event chains.
-
-### 3) Architecture Roast
-
-- This is a **modular monolith**, not microservices. That is fine, but call it what it is.
-- Separation between routes/controllers/services exists, but authentication/authorization boundaries are inconsistent across endpoints.
-- Runtime provider switching is strong, but provider abstraction does not eliminate failure-mode complexity (token limits, malformed model output, stream interruption).
-- Security defaults are too permissive for any serious deployment (`allow_origins=["*"]`, weak default JWT secret).
-
-### Missing Information (and yes, this is a problem)
-
-You did not provide explicit SLAs, target throughput, expected tenant model, or compliance constraints. Without these, architecture decisions cannot be validated beyond “works on my machine”. For a production-grade system, this is unacceptable ambiguity.
-
----
 
 ## 1. Project Overview & Business Logic
 
