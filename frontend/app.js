@@ -499,6 +499,11 @@ const views = {
         showLoader();
 
         try {
+            const projectsNewBtn = document.getElementById('projects-new-project-btn');
+            if (projectsNewBtn) {
+                projectsNewBtn.onclick = handleNewProject;
+            }
+
             const projects = await api.get('/projects/');
             state.projects = projects;
 
