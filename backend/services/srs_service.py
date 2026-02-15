@@ -15,12 +15,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.models import ChatMessage, SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
+from backend.services.judging_service import JudgingService
 
 logger = logging.getLogger(__name__)
 
 
 class SRSService:
     """Generate and export SRS drafts from project chat messages."""
+    def __init__(self):
+        self.judging_service = JudgingService()
 
     async def get_latest_draft(self, db: AsyncSession, project_id: int) -> SRSDraft | None:
         stmt = (
@@ -63,6 +66,35 @@ class SRSService:
         )
         db.add(draft)
         await db.flush()
+        """        
+        Refactor: 2026-02-15 - Adel Sobhy SRS REFINING
+        This is the implementation of the SRS refinement service.
+        """
+        try:
+            refined_result = await self.judging_service.judge_and_refine(
+                srs_content=content,
+                language=language,
+                store_refined=False,  
+                db=None,
+                project_id=None,
+            )
+
+            refined_version = version + 1
+
+            # Update the initial draft in-place with refined content
+            draft.version = refined_version
+            draft.status = "refined"
+            draft.content = refined_result["refined_srs"]
+
+
+            await db.commit()
+            logger.info(f"Draft refined and updated in DB as version {refined_version} for project {project_id}")
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Failed to refine SRS automatically: {e}")
+
+        await db.refresh(draft)  
         return draft
 
     def export_pdf(self, draft: SRSDraft) -> bytes:
