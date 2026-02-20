@@ -578,13 +578,13 @@ body {
 
 /* Interview suggested answers (stacked vertically) */
 .interview-answer-select-wrap {
-    margin-top: 14px;
+    margin-top: 10px;
 }
 
 .interview-answer-options {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 8px;
 }
 
 .interview-answer-option {
@@ -592,7 +592,7 @@ body {
     align-items: flex-start;
     gap: 10px;
     width: 100%;
-    padding: 10px 12px;
+    padding: 8px 10px;
     border: 1px solid var(--border-color);
     border-radius: 12px;
     background: var(--bg-card);
@@ -605,6 +605,8 @@ body {
 
 .interview-answer-option span {
     flex: 1;
+    font-size: 13px;
+    line-height: 1.45;
 }
 
 /* Chat Input */
@@ -990,6 +992,30 @@ body {
     display: grid;
     grid-template-columns: 1fr 1.5fr;
     gap: 32px;
+}
+
+/* Interview CTA in project detail */
+.interview-cta-section {
+    grid-column: 1 / -1;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.interview-cta-section .btn {
+    font-size: 1.1em;
+    padding: 14px 32px;
+}
+
+.interview-cta-hint {
+    margin-top: 8px;
+    color: var(--text-secondary);
+    font-size: 0.9em;
+}
+
+.upload-optional-hint {
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    margin-bottom: 8px;
 }
 
 .upload-zone {
@@ -2290,6 +2316,44 @@ body {
     margin: 8px 0;
 }
 
+.interview-telemetry-card {
+    margin-top: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    background: var(--bg-card);
+    padding: 8px 10px;
+}
+
+.interview-telemetry-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 8px;
+}
+
+.interview-telemetry-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.interview-telemetry-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.interview-telemetry-item strong {
+    color: var(--text-main);
+    font-size: 12px;
+}
+
 @media (max-width: 768px) {
     .live-doc-panel {
         position: fixed;
@@ -2430,11 +2494,11 @@ body {
 
 .coverage-item {
     flex: 1;
-    min-width: 120px;
+    min-width: 100px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: 6px;
+    padding: 6px 8px;
     border-radius: 12px;
     background: var(--bg-card);
     border: 1px solid var(--border-color);
@@ -2442,11 +2506,11 @@ body {
 }
 
 .coverage-label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
     color: var(--text-muted);
     white-space: nowrap;
-    min-width: 55px;
+    min-width: 46px;
 }
 
 .coverage-bar-track {
@@ -2467,11 +2531,15 @@ body {
 }
 
 .coverage-pct {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 700;
     color: var(--text-muted);
-    min-width: 28px;
+    min-width: 24px;
     text-align: end;
+}
+
+.coverage-kpi {
+    display: none;
 }
 
 /* Active area - glow */
@@ -2537,6 +2605,115 @@ body {
     animation: fadeIn 0.3s ease;
 }
 
+.live-doc-alerts {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.live-doc-alert {
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: var(--bg-card);
+}
+
+.live-doc-alert-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 4px;
+}
+
+.live-doc-alert-text {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+.live-doc-alert-high {
+    border-color: rgba(220, 38, 38, 0.45);
+    background: rgba(220, 38, 38, 0.08);
+}
+
+.live-doc-alert-high .live-doc-alert-title {
+    color: var(--error);
+}
+
+.live-doc-alert-medium {
+    border-color: rgba(245, 158, 11, 0.45);
+    background: rgba(245, 158, 11, 0.08);
+}
+
+.live-doc-alert-medium .live-doc-alert-title {
+    color: var(--warning);
+}
+
+.live-doc-plan {
+    margin-bottom: 14px;
+    border: 1px dashed var(--border-color);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: rgba(31, 157, 143, 0.06);
+}
+
+.live-doc-plan-row {
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-main);
+}
+
+.live-doc-trace {
+    margin-bottom: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 8px 10px;
+    background: rgba(232, 93, 42, 0.05);
+}
+
+.live-doc-trace-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.live-doc-trace-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.live-doc-trace-step {
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 6px 8px;
+    background: var(--bg-card);
+}
+
+.live-doc-trace-step-name {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--accent-primary);
+    margin-bottom: 2px;
+    text-transform: capitalize;
+}
+
+.live-doc-trace-step-text {
+    font-size: 12px;
+    color: var(--text-main);
+    line-height: 1.5;
+}
+
+.live-doc-focus-area {
+    border: 1px solid rgba(232, 93, 42, 0.35);
+    border-radius: 12px;
+    padding: 10px;
+    background: rgba(232, 93, 42, 0.06);
+}
+
 .live-doc-section-header {
     display: flex;
     align-items: center;
@@ -2559,6 +2736,15 @@ body {
     font-size: 11px;
     font-weight: 600;
     margin-inline-start: auto;
+}
+
+.live-doc-delta-badge {
+    background: rgba(22, 163, 74, 0.14);
+    color: var(--success);
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
 }
 
 .live-doc-items {
@@ -2603,6 +2789,28 @@ body {
 
 .live-doc-new-item::before {
     background: var(--accent-primary) !important;
+}
+
+.live-doc-updated-item {
+    background: rgba(245, 158, 11, 0.14);
+}
+
+.live-doc-updated-item::before {
+    background: var(--warning) !important;
+}
+
+.live-doc-removed-item {
+    color: var(--danger);
+    font-size: 12px;
+}
+
+.coverage-kpi {
+    display: block;
+    margin-top: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0.2px;
 }
 
 @keyframes newItemPulse {

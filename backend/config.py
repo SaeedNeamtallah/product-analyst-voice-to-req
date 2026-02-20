@@ -3,9 +3,11 @@ Configuration management using Pydantic Settings.
 Loads environment variables from .env file.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, field_validator
 from typing import List
 import json
+import secrets
+import warnings
 
 
 class Settings(BaseSettings):
@@ -151,9 +153,23 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     # Authentication
-    jwt_secret: str = Field(default="ragmind-secret-change-me-in-production", alias="JWT_SECRET")
+    jwt_secret: str = Field(default="", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     jwt_expiry_hours: int = Field(default=72, alias="JWT_EXPIRY_HOURS")
+
+    @field_validator("jwt_secret", mode="after")
+    @classmethod
+    def _ensure_jwt_secret(cls, v: str) -> str:
+        _INSECURE_DEFAULT = "ragmind-secret-change-me-in-production"
+        if not v or v == _INSECURE_DEFAULT:
+            warnings.warn(
+                "JWT_SECRET not set or using insecure default. "
+                "A random secret has been generated for this session. "
+                "Set JWT_SECRET in .env for persistent tokens across restarts.",
+                stacklevel=2,
+            )
+            return secrets.token_urlsafe(64)
+        return v
     
     model_config = SettingsConfigDict(
         env_file=".env",

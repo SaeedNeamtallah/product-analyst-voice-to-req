@@ -30,17 +30,19 @@ class User(Base):
 class Project(Base):
     """Project model for organizing documents."""
     __tablename__ = "projects"
-    
+
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
-    
+
     # Metadata (renamed to avoid conflict with SQLAlchemy metadata)
     extra_metadata = Column("metadata", JSON, default={})
-    
+
     # Relationships
+    owner = relationship("User", backref="projects")
     assets = relationship("Asset", back_populates="project", cascade="all, delete-orphan")
     chunks = relationship("Chunk", back_populates="project", cascade="all, delete-orphan")
     

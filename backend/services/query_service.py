@@ -146,10 +146,11 @@ class QueryService:
             return query
 
         prompt = (
-            "Rewrite the user query to improve document retrieval. "
-            "Keep the same language and meaning, remove filler words, "
-            "and return only the rewritten query.\n\n"
-            f"Query: {query}\nRewritten:"
+            "You are a retrieval query optimizer for enterprise RAG. "
+            "Rewrite the user query for high-precision semantic retrieval while preserving intent. "
+            "Rules: keep original language, preserve domain terms/acronyms/numbers/names, remove filler only, "
+            "and output one single rewritten query line with no extra text.\n\n"
+            f"Original Query: {query}\nRewritten Query:"
         )
 
         try:

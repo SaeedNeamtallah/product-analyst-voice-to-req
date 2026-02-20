@@ -25,17 +25,19 @@ class ProjectController:
         db: AsyncSession,
         name: str,
         description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[int] = None
     ) -> Project:
         """
         Create a new project.
-        
+
         Args:
             db: Database session
             name: Project name
             description: Optional description
             metadata: Optional metadata
-            
+            user_id: Owner user ID
+
         Returns:
             Created project
         """
@@ -43,7 +45,8 @@ class ProjectController:
             project = Project(
                 name=name,
                 description=description,
-                extra_metadata=metadata or {}
+                extra_metadata=metadata or {},
+                user_id=user_id
             )
             
             db.add(project)
@@ -61,23 +64,27 @@ class ProjectController:
     async def get_project(
         self,
         db: AsyncSession,
-        project_id: int
+        project_id: int,
+        user_id: Optional[int] = None
     ) -> Optional[Project]:
         """
-        Get project by ID.
-        
+        Get project by ID, optionally scoped to a user.
+
         Args:
             db: Database session
             project_id: Project ID
-            
+            user_id: If provided, only return project if owned by this user
+
         Returns:
             Project or None
         """
         try:
             stmt = select(Project).where(Project.id == project_id)
+            if user_id is not None:
+                stmt = stmt.where(Project.user_id == user_id)
             result = await db.execute(stmt)
             project = result.scalar_one_or_none()
-            
+
             return project
             
         except Exception as e:
@@ -88,21 +95,26 @@ class ProjectController:
         self,
         db: AsyncSession,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        user_id: Optional[int] = None
     ) -> List[Project]:
         """
-        List all projects.
-        
+        List projects, optionally scoped to a user.
+
         Args:
             db: Database session
             skip: Number of projects to skip
             limit: Maximum number of projects to return
-            
+            user_id: If provided, only return projects owned by this user
+
         Returns:
             List of projects
         """
         try:
-            stmt = select(Project).offset(skip).limit(limit).order_by(Project.created_at.desc())
+            stmt = select(Project)
+            if user_id is not None:
+                stmt = stmt.where(Project.user_id == user_id)
+            stmt = stmt.offset(skip).limit(limit).order_by(Project.created_at.desc())
             result = await db.execute(stmt)
             projects = result.scalars().all()
             
@@ -161,24 +173,28 @@ class ProjectController:
     async def delete_project(
         self,
         db: AsyncSession,
-        project_id: int
+        project_id: int,
+        user_id: Optional[int] = None
     ) -> bool:
         """
         Delete project and all associated data.
-        
+
         Args:
             db: Database session
             project_id: Project ID
-            
+            user_id: If provided, only delete if owned by this user
+
         Returns:
             True if deleted successfully
         """
         try:
             # Delete files from storage
             await self.file_service.delete_project_files(project_id)
-            
+
             # Delete from database (cascade will handle assets and chunks)
             stmt = delete(Project).where(Project.id == project_id)
+            if user_id is not None:
+                stmt = stmt.where(Project.user_id == user_id)
             result = await db.execute(stmt)
             await db.commit()
             

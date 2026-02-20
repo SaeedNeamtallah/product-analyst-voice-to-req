@@ -4,6 +4,7 @@ Handles generating AI-powered answers using LLM.
 """
 from typing import List, Dict, Any, Optional, AsyncIterator
 from backend.providers.llm.factory import LLMProviderFactory
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,8 @@ class AnswerService:
         query: str,
         context_chunks: List[Dict[str, Any]],
         language: str = "ar",  # Default to Arabic
-        include_sources: bool = True
+        include_sources: bool = True,
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Generate answer from query and context.
@@ -41,7 +43,7 @@ class AnswerService:
             context = self._build_context(context_chunks)
             
             # Build prompt
-            prompt = self._build_prompt(query, context, language)
+            prompt = self._build_prompt(query, context, language, project_context)
             
             # Generate answer
             answer = await self.llm_provider.generate_text(
@@ -71,6 +73,7 @@ class AnswerService:
         query: str,
         context_chunks: List[Dict[str, Any]],
         language: str = "ar",
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
         """
         Stream answer tokens from LLM.
@@ -79,7 +82,7 @@ class AnswerService:
         """
         try:
             context = self._build_context(context_chunks)
-            prompt = self._build_prompt(query, context, language)
+            prompt = self._build_prompt(query, context, language, project_context)
 
             async for token in self.llm_provider.generate_text_stream(
                 prompt=prompt,
@@ -125,7 +128,13 @@ class AnswerService:
         
         return "\n\n".join(context_parts)
     
-    def _build_prompt(self, query: str, context: str, language: str) -> str:
+    def _build_prompt(
+        self,
+        query: str,
+        context: str,
+        language: str,
+        project_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Build prompt for LLM.
         
@@ -137,48 +146,69 @@ class AnswerService:
         Returns:
             Formatted prompt
         """
-        if language == "ar":
-            system_prompt = """أنت مساعد احترافي على مستوى الشركات للإجابة بدقة اعتمادًا على سياق المستندات فقط.
-اتّبع القواعد التالية بدقة:
-1) اعتمد فقط على السياق المقدم. إذا لم تجد الإجابة في السياق، قل ذلك بوضوح.
-2) قدّم إجابة مباشرة ومختصرة أولاً، ثم أضف تفاصيل داعمة عند الحاجة.
-3) اربط كل معلومة بمرجع داخل النص باستخدام (مصدر 1) أو (مصدر 2) بعد الجملة ذات الصلة.
-4) لا تخمّن ولا تضف معلومات من خارج السياق.
-5) إذا كان المصدر دينيًّا، فأدرج الأحاديث الواردة أو القريبة في هذا الباب فقط إن كانت موجودة صراحة في السياق.
-6) استخدم العربية الفصحى وتجنّب الحشو.
+        response_style = self._response_style_from_query(query=query, language=language)
+        project_profile = self._build_project_profile(project_context)
 
-الإخراج:
-- فقرة إجابة واضحة.
-- عند اللزوم، قائمة نقاط موجزة مع الاستشهادات."""
+        if language == "ar":
+            system_prompt = """أنت مستشار تقني/أعمال احترافي بمستوى مؤسسي (Industry-grade) للمشاريع البرمجية.
+الهدف: تقديم إجابة عملية قابلة للتنفيذ وتخدم سياق المشروع الحالي.
+
+قواعد إلزامية:
+1) اعتمد على سياق المستندات أولًا، ثم على ملف المشروع/SRS إن توفر.
+2) إذا كانت معلومة غير موجودة في السياق، صرّح بذلك بوضوح ولا تختلق.
+3) اربط كل نقطة مهمة باستشهاد داخل النص مثل (مصدر 1).
+4) اجعل الإجابة مهنية وقابلة للتنفيذ: قرارات، خطوات، أو معايير واضحة.
+5) لا تكرّر نصوص عامة؛ خصّص الإجابة على المشروع المطلوب.
+
+تنسيق الإخراج:
+- إجابة مباشرة أولًا (2-4 سطور).
+- ثم نقاط تنفيذية قصيرة عند الحاجة مع الاستشهادات.
+- ثم بند "مخاطر/افتراضات" إذا كانت البيانات ناقصة."""
 
             prompt = f"""{system_prompt}
+
+بروفايل المشروع:
+{project_profile}
+
+أسلوب الإجابة المطلوب:
+{response_style}
 
 السياق:
 {context}
 
-السؤال: {query}
+السؤال:
+{query}
 
 الإجابة:"""
         else:
-            system_prompt = """You are an enterprise-grade assistant answering strictly from the provided document context.
-Follow these rules:
-1) Use only the given context. If the answer is not in the context, state that clearly.
-2) Provide a concise direct answer first, then add supporting detail if needed.
-3) Cite sources inline using (Source 1) or (Source 2) after each relevant statement.
-4) Do not guess or add external knowledge.
-5) If the source is religious, include relevant hadiths only when they explicitly appear in the context.
-6) Keep the response clear and professional.
+            system_prompt = """You are an enterprise solution assistant (industry-grade) for software projects.
+Goal: deliver project-serving, execution-ready answers.
 
-Output:
-- One clear answer paragraph.
-- If helpful, a short bullet list with citations."""
+Mandatory rules:
+1) Prioritize document context, then use project/SRS profile if available.
+2) If evidence is missing, say it clearly and avoid fabrication.
+3) Cite key claims inline as (Source 1), (Source 2), etc.
+4) Keep outputs implementation-oriented: decisions, steps, and criteria.
+5) Avoid generic boilerplate; tailor to this project.
+
+Output format:
+- Direct answer first (2-4 lines).
+- Then concise action bullets when useful, with citations.
+- Add "Risks/Assumptions" when data is incomplete."""
 
             prompt = f"""{system_prompt}
+
+Project profile:
+{project_profile}
+
+Preferred response style:
+{response_style}
 
 Context:
 {context}
 
-Question: {query}
+Question:
+{query}
 
 Answer:"""
         
@@ -214,10 +244,11 @@ Answer:"""
         self,
         query: str,
         language: str = "ar",
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Generate answer using LLM general knowledge when no documents exist."""
         try:
-            prompt = self._build_no_context_prompt(query, language)
+            prompt = self._build_no_context_prompt(query, language, project_context)
             answer = await self.llm_provider.generate_text(
                 prompt=prompt,
                 temperature=0.7,
@@ -236,10 +267,11 @@ Answer:"""
         self,
         query: str,
         language: str = "ar",
+        project_context: Optional[Dict[str, Any]] = None,
     ) -> AsyncIterator[str]:
         """Stream answer tokens using LLM general knowledge when no documents exist."""
         try:
-            prompt = self._build_no_context_prompt(query, language)
+            prompt = self._build_no_context_prompt(query, language, project_context)
             async for token in self.llm_provider.generate_text_stream(
                 prompt=prompt,
                 temperature=0.7,
@@ -251,29 +283,96 @@ Answer:"""
             raise
 
     @staticmethod
-    def _build_no_context_prompt(query: str, language: str) -> str:
+    def _build_no_context_prompt(
+        query: str,
+        language: str,
+        project_context: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """Build prompt for LLM-only mode (no document context available)."""
+        project_profile = AnswerService._build_project_profile(project_context)
+        response_style = AnswerService._response_style_from_query(query=query, language=language)
         if language == "ar":
-            return f"""أنت مساعد ذكي ذو معرفة واسعة. لم يتم رفع أي مستندات لهذا المشروع، لذا لا يمكنك الإشارة إلى أي مصادر محددة.
-أجب عن سؤال المستخدم باستخدام معرفتك العامة. كن مفيدًا ودقيقًا ومهنيًا.
+            return f"""أنت مساعد مؤسسي للمشاريع البرمجية. لا توجد مستندات مرفوعة حاليًا، لذا اعتمد على المعرفة العامة + بروفايل المشروع فقط.
 القواعد:
-1) أجب من معرفتك العامة بوضوح وإيجاز.
-2) لا تستشهد بأي مصادر (لا توجد مصادر متاحة).
-3) إذا لم تكن متأكدًا من شيء ما، قل ذلك بصراحة.
-4) حافظ على وضوح ومهنية الإجابة.
-5) استخدم العربية الفصحى.
+1) كن عمليًا ومباشرًا وقدم إجابة تخدم المشروع.
+2) لا تدّع وجود مصادر أو استشهادات.
+3) إذا كانت المعلومة غير مؤكدة، اذكر ذلك مع افتراض واضح.
+4) اختم بخطوة تنفيذية تالية واحدة على الأقل.
 
-السؤال: {query}
+بروفايل المشروع:
+{project_profile}
+
+أسلوب الإجابة المطلوب:
+{response_style}
+
+السؤال:
+{query}
 
 الإجابة:"""
-        return f"""You are a knowledgeable AI assistant. No documents have been uploaded for this project, so you cannot reference any specific sources.
-Answer the user's question using your general knowledge. Be helpful, accurate, and professional.
+        return f"""You are an enterprise project assistant. No documents are currently available, so answer using general knowledge + project profile only.
 Rules:
-1) Answer from your general knowledge clearly and concisely.
-2) Do NOT cite any sources (there are none available).
-3) If you are uncertain about something, say so honestly.
-4) Keep the response clear and professional.
+1) Be practical and project-serving.
+2) Do not claim sources or citations.
+3) If uncertain, state assumptions clearly.
+4) End with at least one actionable next step.
 
-Question: {query}
+Project profile:
+{project_profile}
+
+Preferred response style:
+{response_style}
+
+Question:
+{query}
 
 Answer:"""
+
+    @staticmethod
+    def _build_project_profile(project_context: Optional[Dict[str, Any]]) -> str:
+        if not project_context:
+            return "N/A"
+
+        profile: Dict[str, Any] = {
+            "project_name": project_context.get("project_name") or "",
+            "project_description": project_context.get("project_description") or "",
+        }
+
+        srs = project_context.get("srs")
+        if isinstance(srs, dict):
+            profile["srs_version"] = srs.get("version")
+            profile["srs_status"] = srs.get("status")
+            content = srs.get("content") if isinstance(srs.get("content"), dict) else {}
+            if content:
+                profile["srs_snapshot"] = content
+
+        serialized = json.dumps(profile, ensure_ascii=False)
+        return serialized[:4000] + ("…" if len(serialized) > 4000 else "")
+
+    @staticmethod
+    def _response_style_from_query(query: str, language: str) -> str:
+        q = (query or "").lower()
+        is_ar = language == "ar"
+
+        if any(k in q for k in ["قارن", "فرق", "مقارنة", "compare", "difference", "vs"]):
+            return (
+                "قدّم مقارنة مختصرة بجدول/نقاط: خيارات، مزايا، مخاطر، وتوصية نهائية."
+                if is_ar else
+                "Provide a compact comparison: options, pros, risks, and a final recommendation."
+            )
+        if any(k in q for k in ["خطوة", "خطوات", "plan", "roadmap", "implement", "تنفيذ"]):
+            return (
+                "أعط خطة تنفيذ مرتبة زمنيًا مع أولويات واضحة ومعيار نجاح لكل خطوة."
+                if is_ar else
+                "Provide a sequenced implementation plan with priorities and success criteria per step."
+            )
+        if any(k in q for k in ["template", "صيغة", "نموذج", "format"]):
+            return (
+                "قدّم قالبًا جاهزًا للاستخدام مع حقول قابلة للتعبئة سريعًا."
+                if is_ar else
+                "Provide a ready-to-use template with fillable fields."
+            )
+        return (
+            "أجب بإيجاز احترافي أولًا ثم نقاط تنفيذية عملية مرتبطة بالمشروع."
+            if is_ar else
+            "Answer with concise professional summary first, then practical project-specific action bullets."
+        )

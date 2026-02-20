@@ -34,11 +34,14 @@ async def get_db() -> AsyncSession:
     """
     Dependency function to get database session.
     Use with FastAPI Depends().
+
+    Callers (routes/controllers) must explicitly ``await db.commit()``
+    when they want to persist changes.  The session will auto-rollback
+    on unhandled exceptions and always close when the request ends.
     """
     async with async_session_maker() as session:
         try:
             yield session
-            await session.commit()
         except Exception:
             await session.rollback()
             raise
@@ -50,6 +53,22 @@ async def init_db():
     """Initialize database - create tables if they don't exist."""
     from backend.database.models import Base
     from sqlalchemy import text
+
+    async def ensure_schema_compat(conn):
+        column_exists = await conn.execute(text("""
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = 'projects'
+              AND column_name = 'user_id'
+            LIMIT 1
+        """))
+        if column_exists.scalar_one_or_none() is None:
+            logger.warning("Legacy schema detected: adding projects.user_id column")
+            await conn.execute(text("ALTER TABLE projects ADD COLUMN user_id INTEGER"))
+            await conn.execute(text("CREATE INDEX IF NOT EXISTS ix_projects_user_id ON projects (user_id)"))
+
+    startup_error = None
     try:
         async with engine.begin() as conn:
             # Enable pgvector extension
@@ -57,17 +76,26 @@ async def init_db():
             
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)
+            await ensure_schema_compat(conn)
             logger.info("Database initialized successfully with pgvector")
+            return
     except Exception as e:
+        startup_error = e
         logger.warning(f"Could not initialize pgvector extension: {str(e)}")
         logger.info("Attempting to initialize other tables...")
         try:
             async with engine.begin() as conn:
                 # Try to create tables one by one or skip those that fail
                 await conn.run_sync(Base.metadata.create_all)
+                await ensure_schema_compat(conn)
                 logger.info("Database tables initialized (some might have failed)")
+                return
         except Exception as e2:
             logger.error(f"Failed to initialize database tables: {str(e2)}")
+            startup_error = e2
+
+    if startup_error is not None:
+        raise RuntimeError("Database initialization failed") from startup_error
 
 
 async def close_db():

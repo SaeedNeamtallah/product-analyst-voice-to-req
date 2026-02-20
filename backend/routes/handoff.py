@@ -4,7 +4,6 @@ Project handoff routes: send SRS + summary to engineering team.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -12,7 +11,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
-from backend.database.models import SRSDraft, Project, ChatMessage
+from backend.database.models import SRSDraft, Project, ChatMessage, User
+from backend.routes.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,13 @@ class HandoffResponse(BaseModel):
 async def create_handoff(
     project_id: int,
     data: HandoffRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Get project
-    result = await db.execute(select(Project).where(Project.id == project_id))
+    # Get project (scoped to user)
+    result = await db.execute(
+        select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    )
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")

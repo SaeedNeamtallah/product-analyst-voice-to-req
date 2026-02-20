@@ -3,13 +3,14 @@ SRS draft routes.
 """
 from __future__ import annotations
 
-import json
-
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
+from backend.database.models import Project, User
+from backend.routes.auth import get_current_user
 from backend.services.srs_service import SRSService
 
 router = APIRouter(tags=["SRS"])
@@ -36,8 +37,21 @@ class SRSDraftResponse(BaseModel):
     created_at: str | None = None
 
 
+async def _verify_project_access(db: AsyncSession, project_id: int, user: User):
+    """Verify the user owns this project."""
+    stmt = select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Project not found")
+
+
 @router.get("/projects/{project_id}/srs", response_model=SRSDraftResponse)
-async def get_latest_srs(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_latest_srs(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_project_access(db, project_id, user)
     service = get_srs_service()
     draft = await service.get_latest_draft(db, project_id)
     if not draft:
@@ -54,12 +68,20 @@ async def get_latest_srs(project_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/projects/{project_id}/srs/refresh", response_model=SRSDraftResponse)
-async def refresh_srs(project_id: int, payload: SRSRefreshRequest, db: AsyncSession = Depends(get_db)):
+async def refresh_srs(
+    project_id: int,
+    payload: SRSRefreshRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_project_access(db, project_id, user)
     service = get_srs_service()
     try:
         draft = await service.generate_draft(db, project_id, payload.language)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    await db.commit()
 
     return {
         "project_id": draft.project_id,
@@ -72,7 +94,12 @@ async def refresh_srs(project_id: int, payload: SRSRefreshRequest, db: AsyncSess
 
 
 @router.get("/projects/{project_id}/srs/export")
-async def export_srs(project_id: int, db: AsyncSession = Depends(get_db)):
+async def export_srs(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_project_access(db, project_id, user)
     service = get_srs_service()
     draft = await service.get_latest_draft(db, project_id)
     if not draft:

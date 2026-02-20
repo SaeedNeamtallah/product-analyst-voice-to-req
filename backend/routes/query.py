@@ -4,12 +4,15 @@ API endpoints for querying documents.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from backend.config import settings
 from backend.runtime_config import get_runtime_value
 from backend.database import get_db
+from backend.database.models import Project, User
+from backend.routes.auth import get_current_user
 from backend.controllers.query_controller import QueryController
 
 router = APIRouter(tags=["Query"])
@@ -21,6 +24,14 @@ def get_query_controller() -> QueryController:
     if _query_controller is None:
         _query_controller = QueryController()
     return _query_controller
+
+
+async def _verify_project_access(db: AsyncSession, project_id: int, user: User):
+    """Verify the user owns this project."""
+    stmt = select(Project).where(Project.id == project_id, Project.user_id == user.id)
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Project not found")
 
 
 # Request/Response Models
@@ -49,12 +60,14 @@ class QueryResponse(BaseModel):
 async def query_project(
     project_id: int,
     query_data: QueryRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Ask a question about project documents.
     Returns AI-generated answer with sources.
     """
+    await _verify_project_access(db, project_id, user)
     try:
         query_controller = get_query_controller()
         result = await query_controller.answer_query(
@@ -75,9 +88,11 @@ async def query_project(
             language=query_data.language,
             asset_id=query_data.asset_id
         )
-        
+
         return result
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -86,12 +101,14 @@ async def query_project(
 async def query_project_stream(
     project_id: int,
     query_data: QueryRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """
     Stream an AI-generated answer via Server-Sent Events.
     Emits: sources event, then token events, then [DONE].
     """
+    await _verify_project_access(db, project_id, user)
     query_controller = get_query_controller()
     top_k = max(
         1,

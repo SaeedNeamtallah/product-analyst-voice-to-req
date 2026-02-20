@@ -56,6 +56,9 @@ const i18n = {
         create_project_btn: "إنشاء المشروع",
         upload_title: "رفع مستندات جديدة",
         upload_desc: "اسحب الملفات هنا أو اضغط للاختيار",
+        upload_optional: "(اختياري) ارفع مستندات مرجعية لدعم المقابلة",
+        start_interview_btn: "ابدأ المقابلة الذكية",
+        interview_cta_hint: "ابدأ محادثة مع محلل الأعمال الذكي لبناء مستند المتطلبات",
         docs_title: "المستندات الحالية",
         bot_settings_title: "إعدادات بوت التليجرام",
         bot_active_project: "المشروع النشط",
@@ -182,6 +185,9 @@ const i18n = {
         create_project_btn: "Create Project",
         upload_title: "Upload New Documents",
         upload_desc: "Drag files here or click to select",
+        upload_optional: "(Optional) Upload reference documents to support the interview",
+        start_interview_btn: "Start Smart Interview",
+        interview_cta_hint: "Chat with the AI Business Analyst to build your requirements document",
         docs_title: "Current Documents",
         bot_settings_title: "Telegram Bot Settings",
         bot_active_project: "Active Project",
@@ -312,9 +318,15 @@ const state = {
     srsRefreshing: false,
     previousSummary: null,
     lastCoverage: null,
+    lastInterviewSignals: null,
+    lastLivePatch: null,
+    lastCycleTrace: null,
+    lastTopicNavigation: null,
+    lastInterviewTelemetry: null,
     interviewDraftMeta: null,
     lastAssistantQuestion: '',
     lastUserInterviewAnswer: '',
+    pendingInterviewSelectionMeta: null,
     authToken: safeStorageGet('authToken', null),
     currentUser: JSON.parse(safeStorageGet('currentUser', 'null')),
     lang: safeStorageGet('lang', 'ar'),
@@ -542,6 +554,16 @@ const views = {
             // Setup Upload Zone
             setupUploadZone(projectId);
 
+            // Interview CTA: navigate to chat with interview mode ON
+            const interviewBtn = document.getElementById('project-start-interview-btn');
+            if (interviewBtn) {
+                interviewBtn.onclick = () => {
+                    state.interviewMode = true;
+                    state.pendingProjectSelect = projectId;
+                    switchView('chat');
+                };
+            }
+
             document.getElementById('back-to-projects').onclick = () => switchView('projects');
             applyTranslations();
         } catch (error) {
@@ -585,6 +607,10 @@ const views = {
             if (draft) {
                 state.previousSummary = draft.summary || null;
                 state.lastCoverage = draft.coverage || null;
+                state.lastInterviewSignals = draft.signals || null;
+                state.lastLivePatch = draft.livePatch || null;
+                state.lastCycleTrace = draft.cycleTrace || null;
+                state.lastTopicNavigation = draft.topicNavigation || null;
                 state.interviewStage = draft.stage || 'discovery';
                 state.lastAssistantQuestion = draft.lastAssistantQuestion || '';
                 state.interviewDraftMeta = draft;
@@ -602,6 +628,10 @@ const views = {
                 if (draft) {
                     state.previousSummary = draft.summary || null;
                     state.lastCoverage = draft.coverage || null;
+                    state.lastInterviewSignals = draft.signals || null;
+                    state.lastLivePatch = draft.livePatch || null;
+                    state.lastCycleTrace = draft.cycleTrace || null;
+                    state.lastTopicNavigation = draft.topicNavigation || null;
                     state.interviewStage = draft.stage || 'discovery';
                     state.lastAssistantQuestion = draft.lastAssistantQuestion || '';
                     state.interviewDraftMeta = draft;
@@ -611,6 +641,10 @@ const views = {
                 } else {
                     state.previousSummary = null;
                     state.lastCoverage = null;
+                    state.lastInterviewSignals = null;
+                    state.lastLivePatch = null;
+                    state.lastCycleTrace = null;
+                    state.lastTopicNavigation = null;
                     state.interviewDraftMeta = null;
                     state.lastAssistantQuestion = '';
                 }
@@ -658,6 +692,11 @@ const views = {
             interviewToggle.checked = state.interviewMode;
             interviewToggle.onchange = () => {
                 state.interviewMode = interviewToggle.checked;
+                if (!state.interviewMode) {
+                    state.lastInterviewSignals = null;
+                    state.lastLivePatch = null;
+                    state.lastCycleTrace = null;
+                }
                 updateInterviewProgress(null, false);
                 updateInterviewAssistBar(state.lastCoverage);
                 const hint = state.lang === 'ar'
@@ -694,6 +733,10 @@ const views = {
 
             state.previousSummary = draft.summary || null;
             state.lastCoverage = draft.coverage || null;
+            state.lastInterviewSignals = draft.signals || null;
+            state.lastLivePatch = draft.livePatch || null;
+            state.lastCycleTrace = draft.cycleTrace || null;
+            state.lastTopicNavigation = draft.topicNavigation || null;
             state.interviewStage = draft.stage || 'discovery';
             state.lastAssistantQuestion = draft.lastAssistantQuestion || '';
             state.interviewDraftMeta = draft;
@@ -1162,6 +1205,10 @@ function buildInterviewDraftPayload() {
     return {
         summary: state.previousSummary,
         coverage: state.lastCoverage,
+        signals: state.lastInterviewSignals,
+        livePatch: state.lastLivePatch,
+        cycleTrace: state.lastCycleTrace,
+        topicNavigation: state.lastTopicNavigation,
         stage: state.interviewStage,
         mode: state.interviewMode,
         lastAssistantQuestion: state.lastAssistantQuestion,
@@ -1383,6 +1430,20 @@ function getQuestionAwareFallbackOptions(questionText = '', stage = 'discovery')
 }
 
 function getInterviewAnswerOptions(suggestedAnswers = [], questionText = '', stage = 'discovery') {
+    const questionTokens = normalizeInterviewText(questionText)
+        .split(' ')
+        .map((token) => token.trim())
+        .filter((token) => token.length >= 3)
+        .filter((token) => !['what', 'which', 'when', 'where', 'كيف', 'ايه', 'ما', 'هو', 'هي', 'على', 'في', 'من'].includes(token));
+
+    const isRelevantOption = (optionText) => {
+        if (!questionTokens.length) return true;
+        const normalized = normalizeInterviewText(optionText);
+        if (!normalized) return false;
+        const overlap = questionTokens.filter((token) => normalized.includes(token)).length;
+        return overlap >= 1;
+    };
+
     const parsed = parseSuggestedAnswers(suggestedAnswers);
     const cleaned = parsed
         .map((item) => String(item || '').trim())
@@ -1397,9 +1458,12 @@ function getInterviewAnswerOptions(suggestedAnswers = [], questionText = '', sta
         unique.push(item);
     });
 
-    const coreChoices = unique.length > 0
-        ? unique.slice(0, 5)
-        : getQuestionAwareFallbackOptions(questionText, stage);
+    const relevant = unique.filter(isRelevantOption);
+
+    const coreChoices = relevant.length >= 2
+        ? relevant.slice(0, 2)
+        : getQuestionAwareFallbackOptions(questionText, stage).slice(0, 2);
+
     return [
         ...coreChoices,
         i18n[state.lang].interview_option_skip,
@@ -1450,6 +1514,12 @@ function attachInterviewSelectToMessage(messageId, suggestedAnswers = [], questi
             const input = document.getElementById('chat-input');
             const selectedInput = wrapper.querySelector('input[type="radio"]:checked');
             if (!input || !selectedInput || !selectedInput.value) return;
+            state.pendingInterviewSelectionMeta = {
+                interview_selection: true,
+                source: 'suggested_answer',
+                stage,
+                question: questionText || ''
+            };
             input.value = selectedInput.value;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             handleChatSubmit();
@@ -1463,10 +1533,12 @@ function attachInterviewSelectToMessage(messageId, suggestedAnswers = [], questi
     msgDiv.querySelector('.msg-body')?.appendChild(wrapper);
 }
 
-function updateInterviewAssistBar(coverage) {
+function updateInterviewAssistBar(coverage, signals = null, livePatch = null) {
     const assistBar = document.getElementById('interview-assist-bar');
     const progressLabel = document.getElementById('interview-progress-label');
     const reviewBtn = document.getElementById('interview-review-btn');
+    const patch = livePatch || state.lastLivePatch || null;
+    const reflector = signals || state.lastInterviewSignals || null;
     if (!reviewBtn) return;
 
     if (!state.interviewMode) {
@@ -1479,7 +1551,61 @@ function updateInterviewAssistBar(coverage) {
     if (progressLabel) {
         progressLabel.textContent = i18n[state.lang].interview_progress.replace('{percent}', String(avg));
     }
+
+    if (assistBar) {
+        let hintEl = document.getElementById('interview-assist-hint');
+        if (!hintEl) {
+            hintEl = document.createElement('div');
+            hintEl.id = 'interview-assist-hint';
+            hintEl.style.fontSize = '12px';
+            hintEl.style.marginTop = '6px';
+            hintEl.style.opacity = '0.9';
+            assistBar.appendChild(hintEl);
+        }
+
+        const focusArea = patch?.focus_area;
+        const focusLabel = focusArea ? (i18n[state.lang][`stage_${focusArea}`] || focusArea) : '';
+        let hint = '';
+
+        if (reflector?.contradiction_detected || reflector?.scope_budget_risk) {
+            hint = reflector?.reason || (state.lang === 'ar'
+                ? 'تم رصد تعارض محتمل. يفضّل تأكيد الأولويات والقيود قبل التوسع.'
+                : 'Potential mismatch detected. Confirm priorities and constraints before expanding scope.');
+        } else if (reflector?.ambiguity_detected) {
+            hint = state.lang === 'ar'
+                ? 'يرجى تحويل الوصف العام إلى متطلبات قابلة للقياس (أرقام/زمن/معيار قبول).'
+                : 'Convert broad wording into measurable requirements (numbers, timing, acceptance criteria).';
+        } else if (focusLabel) {
+            hint = state.lang === 'ar'
+                ? `التركيز الذكي القادم: ${focusLabel}`
+                : `Smart next focus: ${focusLabel}`;
+        }
+
+        hintEl.textContent = hint;
+        hintEl.style.display = hint ? 'block' : 'none';
+
+        const telemetryEl = document.getElementById('interview-telemetry-card');
+        if (telemetryEl) {
+            telemetryEl.style.display = 'none';
+            telemetryEl.innerHTML = '';
+        }
+    }
+
     reviewBtn.disabled = avg < 60;
+}
+
+async function refreshInterviewTelemetry(projectId) {
+    try {
+        const telemetry = await api.get(`/projects/${projectId}/interview/telemetry`);
+        if (!telemetry || typeof telemetry !== 'object') {
+            state.lastInterviewTelemetry = null;
+            return;
+        }
+        state.lastInterviewTelemetry = telemetry;
+    } catch (error) {
+        state.lastInterviewTelemetry = null;
+        console.error('Interview Telemetry Refresh Error:', error);
+    }
 }
 
 // --- Button Loading State ---
@@ -1794,8 +1920,38 @@ async function logChatMessages(projectId, userText, assistantText, sources) {
                 { role: 'assistant', content: assistantText, metadata: { sources: sources || [] } }
             ]
         });
+        return true;
     } catch (error) {
         console.error('Log Messages Error:', error);
+        return false;
+    }
+}
+
+async function refreshLivePatchPanel(projectId, language) {
+    try {
+        const patchResult = await api.post(`/projects/${projectId}/messages/live-patch`, {
+            language,
+            last_summary: state.previousSummary || null,
+            last_coverage: state.lastCoverage || null
+        });
+        if (!patchResult?.summary) return;
+
+        state.previousSummary = patchResult.summary || state.previousSummary;
+        state.lastCoverage = patchResult.coverage || state.lastCoverage;
+        state.lastInterviewSignals = patchResult.signals || null;
+        state.lastLivePatch = patchResult.live_patch || null;
+        state.lastCycleTrace = patchResult.cycle_trace || null;
+        state.lastTopicNavigation = patchResult.topic_navigation || null;
+        state.interviewStage = patchResult.stage || state.interviewStage;
+
+        const liveDocPanel = document.getElementById('live-doc-panel');
+        if (liveDocPanel) {
+            liveDocPanel.style.display = 'flex';
+        }
+
+        updateLiveDoc(patchResult.summary, patchResult.stage || 'discovery');
+    } catch (error) {
+        console.error('Live Patch Refresh Error:', error);
     }
 }
 
@@ -1830,6 +1986,8 @@ async function loadChatHistory(projectId) {
                     <p>${state.lang === 'ar' ? 'ابدأ في طرح الأسئلة حول مشروعك.' : 'Start asking questions about your project.'}</p>
                 </div>
             `;
+            await refreshInterviewTelemetry(projectId);
+            updateInterviewAssistBar(state.lastCoverage);
             return;
         }
 
@@ -1875,6 +2033,11 @@ async function loadChatHistory(projectId) {
 
         // Scroll to bottom
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        if (messages.length > 0) {
+            await refreshLivePatchPanel(projectId, state.lang);
+        }
+        await refreshInterviewTelemetry(projectId);
+        updateInterviewAssistBar(state.lastCoverage);
     } catch (error) {
         console.error('Load Chat History Error:', error);
         messagesContainer.innerHTML = `
@@ -1910,6 +2073,8 @@ function createProjectCard(project) {
             handleDeleteProject(project.id);
             return;
         }
+        // Interview-first: default to interview mode when opening any project
+        state.interviewMode = true;
         state.pendingProjectSelect = project.id;
         switchView('chat');
     };
@@ -2191,6 +2356,10 @@ async function handleNewProject() {
             state.pendingProjectSelect = newProject.id;
             state.previousSummary = null;
             state.lastCoverage = null;
+            state.lastInterviewSignals = null;
+            state.lastLivePatch = null;
+            state.lastCycleTrace = null;
+                state.lastTopicNavigation = null;
             switchView('chat');
         } catch (error) {
             console.error('Create Project Error:', error);
@@ -2264,8 +2433,10 @@ async function handleChatSubmit() {
     if (state.interviewMode) {
         try {
             state.lastUserInterviewAnswer = query;
+            const userMessageMetadata = state.pendingInterviewSelectionMeta || undefined;
+            state.pendingInterviewSelectionMeta = null;
             await api.post(`/projects/${projectId}/messages`, {
-                messages: [{ role: 'user', content: query }]
+                messages: [{ role: 'user', content: query, metadata: userMessageMetadata }]
             });
 
             const interviewPayload = { language };
@@ -2277,6 +2448,7 @@ async function handleChatSubmit() {
             }
 
             const next = await api.post(`/projects/${projectId}/interview/next`, interviewPayload);
+            await refreshInterviewTelemetry(projectId);
 
             const questionText = next.question || (state.lang === 'ar'
                 ? 'هل يمكن توضيح النقطة الأخيرة بمثال؟'
@@ -2295,12 +2467,22 @@ async function handleChatSubmit() {
             if (next.coverage) {
                 state.lastCoverage = next.coverage;
             }
+            state.lastInterviewSignals = next.signals || null;
+            state.lastLivePatch = next.live_patch || null;
+            state.lastCycleTrace = next.cycle_trace || null;
+            state.lastTopicNavigation = next.topic_navigation || null;
             state.interviewStage = next.stage || state.interviewStage;
-            updateInterviewProgress(next.coverage, next.done);
-            updateInterviewAssistBar(next.coverage);
+            updateInterviewProgress(next.coverage, next.done, next.topic_navigation);
+            updateInterviewAssistBar(next.coverage, next.signals, next.live_patch);
             if (next.summary) {
                 updateLiveDoc(next.summary, next.stage);
             }
+
+            const warningText = Array.isArray(next?.live_patch?.warnings) ? next.live_patch.warnings[0] : '';
+            if (warningText) {
+                showNotification(warningText, 'warning');
+            }
+
             attachInterviewSelectToMessage(
                 thinkingId,
                 next.suggested_answers || [],
@@ -2395,7 +2577,8 @@ async function handleChatSubmit() {
 
         // Finalize: attach sources + copy button
         finalizeBotMessage(thinkingId, fullAnswer, sources);
-        logChatMessages(projectId, query, fullAnswer, sources);
+        await logChatMessages(projectId, query, fullAnswer, sources);
+        await refreshLivePatchPanel(projectId, language);
 
     } catch (error) {
         // Fallback: try non-streaming endpoint
@@ -2410,7 +2593,8 @@ async function handleChatSubmit() {
             const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
             if (ind) ind.remove();
             finalizeBotMessage(thinkingId, result.answer, result.sources);
-            logChatMessages(projectId, query, result.answer, result.sources);
+            await logChatMessages(projectId, query, result.answer, result.sources);
+            await refreshLivePatchPanel(projectId, language);
         } catch (fallbackErr) {
             const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
             if (ind) ind.remove();
@@ -3030,7 +3214,7 @@ function updateMicButton(recording) {
 
 // --- Interview Progress ---
 
-function updateInterviewProgress(coverage, done) {
+function updateInterviewProgress(coverage, done, topicNavigation = null) {
     const progressBar = document.getElementById('interview-progress');
     const liveDocPanel = document.getElementById('live-doc-panel');
     const assistBar = document.getElementById('interview-assist-bar');
@@ -3111,7 +3295,89 @@ function updateLiveDoc(summary, stage) {
     // Structured summary (object with arrays)
     if (typeof summary === 'object' && !Array.isArray(summary)) {
         const prevSummary = state.previousSummary || {};
+        const patch = state.lastLivePatch || null;
+        const trace = state.lastCycleTrace || null;
+        const focusArea = patch?.focus_area || null;
+        const patchMap = new Map((patch?.changed_areas || []).map((item) => [item.area, item]));
+        const patchEvents = Array.isArray(patch?.events) ? patch.events : [];
+        const eventMap = new Map(patchEvents.map((event) => [String(event?.field_path || ''), String(event?.op || '')]));
+        const removedEvents = patchEvents.filter((event) => String(event?.op || '') === 'removed');
+        const alerts = Array.isArray(patch?.alerts) ? patch.alerts : [];
+        const plan = patch?.next_plan || null;
         let html = '';
+
+        if (alerts.length > 0) {
+            html += `
+                <div class="live-doc-alerts">
+                    ${alerts.map((alert) => {
+                        const severity = String(alert?.severity || 'info');
+                        const title = escapeHtml(String(alert?.title || 'Alert'));
+                        const msg = escapeHtml(String(alert?.message || ''));
+                        return `
+                            <div class="live-doc-alert live-doc-alert-${severity}">
+                                <div class="live-doc-alert-title">${title}</div>
+                                <div class="live-doc-alert-text">${msg}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        if (plan?.target_stage || plan?.question_style) {
+            const stageKey = plan?.target_stage ? `stage_${plan.target_stage}` : '';
+            const stageLabel = stageKey ? (i18n[state.lang][stageKey] || plan.target_stage) : '';
+            const styleText = escapeHtml(String(plan?.question_style || ''));
+            const hintText = escapeHtml(String(plan?.prompt_hint || ''));
+            html += `
+                <div class="live-doc-plan">
+                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'التركيز القادم:' : 'Next focus:'}</strong> ${escapeHtml(stageLabel)}</div>
+                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'نمط السؤال:' : 'Question style:'}</strong> ${styleText}</div>
+                    ${hintText ? `<div class="live-doc-plan-row">${hintText}</div>` : ''}
+                </div>
+            `;
+        }
+
+        if (trace?.steps && Array.isArray(trace.steps)) {
+            const scoreCoverage = Number(trace?.score?.coverage || 0);
+            const scoreConfidence = Number(trace?.score?.confidence || 0);
+            const riskLevel = escapeHtml(String(trace?.score?.risk_level || 'low'));
+            html += `
+                <div class="live-doc-trace">
+                    <div class="live-doc-trace-head">
+                        <strong>${state.lang === 'ar' ? 'دورة التفكير' : 'Cognitive loop'}</strong>
+                        <span>${state.lang === 'ar' ? 'تغطية' : 'Coverage'}: ${Math.round(scoreCoverage)}%</span>
+                        <span>${state.lang === 'ar' ? 'ثقة' : 'Confidence'}: ${Math.round(scoreConfidence * 100)}%</span>
+                        <span>${state.lang === 'ar' ? 'مخاطرة' : 'Risk'}: ${riskLevel}</span>
+                    </div>
+                    <div class="live-doc-trace-steps">
+                        ${trace.steps.map((step, idx) => {
+                            const name = escapeHtml(String(step?.name || `step-${idx + 1}`));
+                            const text = escapeHtml(String(step?.summary || ''));
+                            return `
+                                <div class="live-doc-trace-step">
+                                    <div class="live-doc-trace-step-name">${idx + 1}. ${name}</div>
+                                    <div class="live-doc-trace-step-text">${text}</div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }
+
+        if (removedEvents.length > 0) {
+            html += `
+                <div class="live-doc-plan">
+                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'حقول تمت إزالتها:' : 'Removed fields:'}</strong></div>
+                    ${removedEvents.slice(0, 5).map((event) => {
+                        const path = escapeHtml(String(event?.field_path || ''));
+                        const value = escapeHtml(String(event?.value || ''));
+                        return `<div class="live-doc-plan-row live-doc-removed-item">${path}: ${value}</div>`;
+                    }).join('')}
+                </div>
+            `;
+        }
 
         for (const [area, items] of Object.entries(summary)) {
             if (!Array.isArray(items) || items.length === 0) continue;
@@ -3119,18 +3385,26 @@ function updateLiveDoc(summary, stage) {
             const prevItems = (prevSummary[area] || []);
             const icon = areaIcons[area] || 'fa-circle-dot';
             const label = stageLabels[area] || area;
+            const isFocus = focusArea && focusArea === area;
+            const areaPatch = patchMap.get(area);
+            const delta = Number(areaPatch?.coverage_delta || 0);
 
             html += `
-                <div class="live-doc-srs-section">
+                <div class="live-doc-srs-section ${isFocus ? 'live-doc-focus-area' : ''}">
                     <div class="live-doc-section-header">
                         <i class="fas ${icon}"></i>
                         <span>${escapeHtml(label)}</span>
                         <span class="live-doc-count-badge">${items.length}</span>
+                        ${delta > 0 ? `<span class="live-doc-delta-badge">+${Math.round(delta)}%</span>` : ''}
                     </div>
                     <ul class="live-doc-items">
-                        ${items.map(item => {
+                        ${items.map((item, idx) => {
                             const isNew = !prevItems.includes(item);
-                            return `<li class="${isNew ? 'live-doc-new-item' : ''}">${escapeHtml(item)}</li>`;
+                            const fieldPath = `${area}.${idx}`;
+                            const op = eventMap.get(fieldPath);
+                            const updatedClass = op === 'updated' ? 'live-doc-updated-item' : '';
+                            const addedClass = op === 'added' ? 'live-doc-new-item' : '';
+                            return `<li class="${isNew ? 'live-doc-new-item' : ''} ${addedClass} ${updatedClass}">${escapeHtml(item)}</li>`;
                         }).join('')}
                     </ul>
                 </div>
@@ -3212,7 +3486,6 @@ function showAuthScreen() {
     if (loginEmailInput) {
         setupFieldValidation(loginEmailInput, (v) => {
             if (!v.trim()) return i18n[state.lang].validation_required;
-            if (!isValidEmail(v)) return i18n[state.lang].validation_email_invalid;
             return null;
         });
     }
@@ -3257,18 +3530,12 @@ function showAuthScreen() {
         errorEl.style.display = 'none';
 
         // Validate fields
-        if (!email || !isValidEmail(email)) {
-            showFieldError(document.getElementById('login-email'), i18n[state.lang].validation_email_invalid);
+        if (!email) {
+            showFieldError(document.getElementById('login-email'), i18n[state.lang].validation_required);
             return;
         }
         if (!password) {
             showFieldError(document.getElementById('login-password'), i18n[state.lang].validation_required);
-            return;
-        }
-
-        // Check rate limiter
-        if (rateLimiter.isLocked()) {
-            startLockoutCountdown(errorEl);
             return;
         }
 
@@ -3285,17 +3552,11 @@ function showAuthScreen() {
                 throw new Error(err.detail || 'Login failed');
             }
             const data = await res.json();
-            rateLimiter.reset();
             setAuthState(data.token, data.user);
             showApp();
         } catch (err) {
-            rateLimiter.recordFailure();
-            if (rateLimiter.isLocked()) {
-                startLockoutCountdown(errorEl);
-            } else {
-                errorEl.textContent = err.message;
-                errorEl.style.display = 'block';
-            }
+            errorEl.textContent = err.message;
+            errorEl.style.display = 'block';
         } finally {
             setButtonLoading(submitBtn, false);
         }
@@ -3324,12 +3585,6 @@ function showAuthScreen() {
             return;
         }
 
-        // Check rate limiter
-        if (rateLimiter.isLocked()) {
-            startLockoutCountdown(errorEl);
-            return;
-        }
-
         const submitBtn = e.target.querySelector('button[type="submit"]');
         setButtonLoading(submitBtn, true);
         try {
@@ -3343,17 +3598,11 @@ function showAuthScreen() {
                 throw new Error(err.detail || 'Registration failed');
             }
             const data = await res.json();
-            rateLimiter.reset();
             setAuthState(data.token, data.user);
             showApp();
         } catch (err) {
-            rateLimiter.recordFailure();
-            if (rateLimiter.isLocked()) {
-                startLockoutCountdown(errorEl);
-            } else {
-                errorEl.textContent = err.message;
-                errorEl.style.display = 'block';
-            }
+            errorEl.textContent = err.message;
+            errorEl.style.display = 'block';
         } finally {
             setButtonLoading(submitBtn, false);
         }
