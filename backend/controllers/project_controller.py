@@ -5,7 +5,7 @@ Business logic for project management.
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.database.models import Project, Asset, Chunk
+from backend.database.models import Project, Asset
 from backend.services.file_service import FileService
 from datetime import datetime
 import logging
@@ -191,7 +191,7 @@ class ProjectController:
             # Delete files from storage
             await self.file_service.delete_project_files(project_id)
 
-            # Delete from database (cascade will handle assets and chunks)
+            # Delete from database (cascade will handle assets)
             stmt = delete(Project).where(Project.id == project_id)
             if user_id is not None:
                 stmt = stmt.where(Project.user_id == user_id)
@@ -230,14 +230,11 @@ class ProjectController:
             asset_result = await db.execute(asset_stmt)
             assets = asset_result.scalars().all()
             
-            # Get chunk count
-            chunk_stmt = select(Chunk).where(Chunk.project_id == project_id)
-            chunk_result = await db.execute(chunk_stmt)
-            chunks = chunk_result.scalars().all()
+            transcript_count = sum(1 for a in assets if (a.extracted_text or "").strip())
             
             return {
                 'asset_count': len(assets),
-                'chunk_count': len(chunks),
+                'transcript_count': transcript_count,
                 'total_size': sum(a.file_size for a in assets),
                 'completed_assets': sum(1 for a in assets if a.status == 'completed'),
                 'processing_assets': sum(1 for a in assets if a.status == 'processing'),

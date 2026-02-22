@@ -71,18 +71,15 @@ async def init_db():
     startup_error = None
     try:
         async with engine.begin() as conn:
-            # Enable pgvector extension
-            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
-            
             # Create all tables
             await conn.run_sync(Base.metadata.create_all)
             await ensure_schema_compat(conn)
-            logger.info("Database initialized successfully with pgvector")
+            logger.info("Database initialized successfully")
             return
     except Exception as e:
         startup_error = e
-        logger.warning(f"Could not initialize pgvector extension: {str(e)}")
-        logger.info("Attempting to initialize other tables...")
+        logger.warning(f"Initial database initialization attempt failed: {str(e)}")
+        logger.info("Attempting fallback initialization...")
         try:
             async with engine.begin() as conn:
                 # Try to create tables one by one or skip those that fail

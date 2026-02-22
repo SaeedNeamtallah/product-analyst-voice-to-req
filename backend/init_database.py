@@ -1,6 +1,6 @@
 """
 Database initialization script.
-Creates database and tables with pgvector extension.
+Creates database and tables.
 """
 import asyncio
 import sys
@@ -95,16 +95,15 @@ async def main():
         
         logger.info(f"Connecting to database: {settings.database_url.split('@')[1]}")
         
-        # Step 2: Initialize tables and extensions
+        # Step 2: Initialize tables
         await init_db()
 
         logger.info("✅ Database initialized successfully!")
         logger.info("Tables created:")
         logger.info("  - projects")
         logger.info("  - assets")
-        logger.info("  - chunks (with vector embeddings)")
-        logger.info("Extensions enabled:")
-        logger.info("  - pgvector")
+        logger.info("  - chat_messages")
+        logger.info("  - srs_drafts")
 
         # Step 3: Create default admin user if no users exist
         await create_default_user()

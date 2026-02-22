@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from backend.database import get_db
-from backend.database.models import Project, Asset, Chunk, User
+from backend.database.models import Project, Asset, User
 from backend.routes.auth import get_current_user
 from backend.errors import is_database_unavailable_error, db_unavailable_http_exception
 
@@ -20,15 +20,18 @@ async def get_global_stats(
 ):
     """Get statistics scoped to the current user's projects."""
     try:
-        user_projects = select(Project.id).where(Project.user_id == user.id).scalar_subquery()
         row = (await db.execute(
             select(
                 select(func.count(Project.id)).where(Project.user_id == user.id).scalar_subquery().label('p'),
                 select(func.count(Asset.id)).where(Asset.project_id.in_(select(Project.id).where(Project.user_id == user.id))).scalar_subquery().label('d'),
-                select(func.count(Chunk.id)).where(Chunk.project_id.in_(select(Project.id).where(Project.user_id == user.id))).scalar_subquery().label('c'),
+                select(func.count(Asset.id)).where(
+                    Asset.project_id.in_(select(Project.id).where(Project.user_id == user.id)),
+                    Asset.extracted_text.isnot(None),
+                    Asset.extracted_text != ""
+                ).scalar_subquery().label('t'),
             )
         )).one()
-        return {"projects": row.p or 0, "documents": row.d or 0, "chunks": row.c or 0}
+        return {"projects": row.p or 0, "documents": row.d or 0, "transcripts": row.t or 0}
     except Exception as e:
         if is_database_unavailable_error(e):
             raise db_unavailable_http_exception()
