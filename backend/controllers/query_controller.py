@@ -41,27 +41,27 @@ class QueryController:
             db: Database session
             project_id: Project ID to search in
             query: User question
-            top_k: Number of chunks to retrieve
+            top_k: Number of transcript matches to retrieve
             language: Response language ('ar' or 'en')
-            asset_id: Optional specific document to search
+            asset_id: Optional specific transcript document to search
             
         Returns:
             Dictionary with answer and metadata
         """
         try:
-            # Search for relevant chunks
+            # Search for relevant transcript context
             logger.info(f"Processing query for project {project_id}: {query[:50]}...")
             project_context = await self._get_project_context(db=db, project_id=project_id)
             
-            similar_chunks = await self.query_service.search_similar_chunks(
+            similar_context = await self.query_service.search_similar_chunks(
                 query=query,
                 project_id=project_id,
                 top_k=top_k,
                 asset_id=asset_id
             )
             
-            if not similar_chunks:
-                logger.info("No chunks found, falling back to LLM-only mode")
+            if not similar_context:
+                logger.info("No transcript context found, falling back to LLM-only mode")
                 return await self.answer_service.generate_answer_no_context(
                     query=query,
                     language=language,
@@ -71,13 +71,13 @@ class QueryController:
             # Generate answer
             result = await self.answer_service.generate_answer(
                 query=query,
-                context_chunks=similar_chunks,
+                context_chunks=similar_context,
                 language=language,
                 include_sources=True,
                 project_context=project_context,
             )
             
-            logger.info(f"Generated answer for query (used {result['context_used']} chunks)")
+            logger.info(f"Generated answer for query (used {result['context_used']} transcript sources)")
             return result
             
         except Exception as e:
@@ -103,15 +103,15 @@ class QueryController:
             )
             project_context = await self._get_project_context(db=db, project_id=project_id)
 
-            similar_chunks = await self.query_service.search_similar_chunks(
+            similar_context = await self.query_service.search_similar_chunks(
                 query=query,
                 project_id=project_id,
                 top_k=top_k,
                 asset_id=asset_id,
             )
 
-            if not similar_chunks:
-                logger.info("No chunks found, falling back to LLM-only streaming mode")
+            if not similar_context:
+                logger.info("No transcript context found, falling back to LLM-only streaming mode")
                 yield f"data: {json.dumps({'type': 'sources', 'sources': [], 'context_used': 0})}\n\n"
                 async for token in self.answer_service.generate_answer_no_context_stream(
                     query=query,
@@ -123,13 +123,13 @@ class QueryController:
                 return
 
             # Emit sources first
-            sources = self.answer_service._extract_sources(similar_chunks)
-            yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'context_used': len(similar_chunks)}, ensure_ascii=False)}\n\n"
+            sources = self.answer_service._extract_sources(similar_context)
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources, 'context_used': len(similar_context)}, ensure_ascii=False)}\n\n"
 
             # Stream answer tokens
             async for token in self.answer_service.generate_answer_stream(
                 query=query,
-                context_chunks=similar_chunks,
+                context_chunks=similar_context,
                 language=language,
                 project_context=project_context,
             ):

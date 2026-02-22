@@ -13,7 +13,7 @@ from fpdf import FPDF
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database.models import ChatMessage, SRSDraft
+from backend.database.models import Asset, ChatMessage, SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
 from backend.services.judging_service import JudgingService
 
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 
 class SRSService:
-    """Generate and export SRS drafts from project chat messages."""
+    """Generate and export SRS drafts from project transcripts and chat."""
     def __init__(self):
         self.judging_service = JudgingService()
 
@@ -42,11 +42,13 @@ class SRSService:
         language: str = "ar",
     ) -> SRSDraft:
         messages = await self._get_project_messages(db, project_id)
-        if not messages:
-            raise ValueError("No chat messages found for this project")
+        transcript_blocks = await self._get_project_transcripts(db, project_id)
+        if not messages and not transcript_blocks:
+            raise ValueError("No interview transcripts or chat messages found for this project")
 
         conversation = self._format_conversation(messages)
-        prompt = self._build_prompt(conversation, language)
+        transcripts = self._format_transcripts(transcript_blocks)
+        prompt = self._build_prompt(conversation, transcripts, language)
 
         llm_provider = LLMProviderFactory.create_provider()
         raw = await llm_provider.generate_text(
@@ -350,6 +352,19 @@ class SRSService:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def _get_project_transcripts(self, db: AsyncSession, project_id: int) -> List[Asset]:
+        stmt = (
+            select(Asset)
+            .where(
+                Asset.project_id == project_id,
+                Asset.extracted_text.isnot(None),
+                Asset.extracted_text != "",
+            )
+            .order_by(Asset.created_at.asc())
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
     async def _next_version(self, db: AsyncSession, project_id: int) -> int:
         stmt = select(func.max(SRSDraft.version)).where(SRSDraft.project_id == project_id)
         result = await db.execute(stmt)
@@ -366,31 +381,49 @@ class SRSService:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_prompt(conversation: str, language: str) -> str:
+    def _format_transcripts(transcripts: List[Asset]) -> str:
+        blocks: List[str] = []
+        for idx, asset in enumerate(transcripts, 1):
+            title = asset.original_filename or f"Transcript {idx}"
+            text = (asset.extracted_text or "").strip()
+            if not text:
+                continue
+            blocks.append(f"[Transcript {idx} - {title}]\n{text}")
+        return "\n\n".join(blocks)
+
+    @staticmethod
+    def _build_prompt(conversation: str, transcripts: str, language: str) -> str:
+        evidence_parts = []
+        if transcripts.strip():
+            evidence_parts.append(f"Interview transcripts:\n{transcripts[:20000]}")
+        if conversation.strip():
+            evidence_parts.append(f"Project chat:\n{conversation[:8000]}")
+        evidence = "\n\n".join(evidence_parts)
+
         if language == "ar":
             return (
-                "أنت محلل أعمال محترف. حلّل المحادثة التالية وأنشئ مسودة SRS بنظام JSON فقط.\n"
+                "أنت محلل أعمال محترف. حلّل نصوص مقابلات المشروع (ومحادثات الفريق إن وجدت) وأنشئ مسودة SRS بنظام JSON فقط.\n"
                 "قواعد مهمة:\n"
                 "1) أخرج JSON فقط بدون نص إضافي.\n"
                 "2) استخدم المفاتيح التالية: summary, metrics, sections, questions, next_steps.\n"
                 "3) metrics: قائمة عناصر {label, value}.\n"
                 "4) sections: قائمة {title, confidence, items}.\n"
                 "5) questions و next_steps قوائم نصية.\n\n"
-                "المحادثة:\n"
-                f"{conversation}\n\n"
+                "مصادر المشروع:\n"
+                f"{evidence}\n\n"
                 "الإخراج (JSON فقط):"
             )
 
         return (
-            "You are a senior business analyst. Read the conversation and produce an SRS draft as JSON only.\n"
+            "You are a senior business analyst. Read project interview transcripts (and optional project chat) and produce an SRS draft as JSON only.\n"
             "Rules:\n"
             "1) Output JSON only, no extra text.\n"
             "2) Use keys: summary, metrics, sections, questions, next_steps.\n"
             "3) metrics is a list of {label, value}.\n"
             "4) sections is a list of {title, confidence, items}.\n"
             "5) questions and next_steps are string arrays.\n\n"
-            "Conversation:\n"
-            f"{conversation}\n\n"
+            "Project sources:\n"
+            f"{evidence}\n\n"
             "Output (JSON only):"
         )
 

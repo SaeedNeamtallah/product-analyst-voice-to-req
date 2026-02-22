@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AnswerService:
-    """Service for generating answers from context."""
+    """Service for generating answers from transcript context."""
     
     def __init__(self):
         """Initialize answer service."""
@@ -31,7 +31,7 @@ class AnswerService:
         
         Args:
             query: User question
-            context_chunks: List of relevant chunks
+            context_chunks: List of relevant transcript context blocks
             language: Response language ('ar' or 'en')
             include_sources: Whether to include source references
             
@@ -39,7 +39,7 @@ class AnswerService:
             Dict with 'answer' and optional 'sources'
         """
         try:
-            # Build context from chunks
+            # Build context from transcript blocks
             context = self._build_context(context_chunks)
             
             # Build prompt
@@ -97,31 +97,20 @@ class AnswerService:
     
     def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
         """
-        Build context string from chunks.
+        Build context string from transcript blocks.
         
         Args:
-            chunks: List of chunk dictionaries
+            chunks: List of context dictionaries
             
         Returns:
             Formatted context string
         """
         context_parts = []
-        seen_parents = set()
 
         for chunk in chunks:
             metadata = chunk.get('metadata', {})
             doc_name = metadata.get('document_name', 'Unknown')
-            parent_content = metadata.get('parent_content')
-            parent_key = None
-
-            if parent_content:
-                parent_key = (metadata.get('asset_id'), metadata.get('parent_index'))
-                if parent_key in seen_parents:
-                    continue
-                seen_parents.add(parent_key)
-                content = parent_content
-            else:
-                content = chunk.get('content', '')
+            content = chunk.get('content', '')
 
             source_index = len(context_parts) + 1
             context_parts.append(f"[مصدر {source_index} - {doc_name}]\n{content}")
@@ -185,7 +174,7 @@ class AnswerService:
 Goal: deliver project-serving, execution-ready answers.
 
 Mandatory rules:
-1) Prioritize document context, then use project/SRS profile if available.
+1) Prioritize provided interview transcript context, then use project/SRS profile if available.
 2) If evidence is missing, say it clearly and avoid fabrication.
 3) Cite key claims inline as (Source 1), (Source 2), etc.
 4) Keep outputs implementation-oriented: decisions, steps, and criteria.
