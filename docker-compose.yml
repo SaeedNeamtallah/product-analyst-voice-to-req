@@ -19,16 +19,5 @@ services:
       retries: 5
     restart: unless-stopped
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: ragmind-qdrant
-    ports:
-      - "6333:6333"
-      - "6334:6334"
-    volumes:
-      - qdrant_data:/qdrant/storage
-    restart: unless-stopped
-
 volumes:
   postgres_data:
-  qdrant_data:
