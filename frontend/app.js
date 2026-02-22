@@ -307,7 +307,6 @@ const state = {
     selectedProject: null,
     chatMessages: [],
     isUploading: false,
-    retrievalTopK: null,
     docPoller: null,
     interviewMode: false,
     interviewStage: 'discovery',
@@ -1025,24 +1024,10 @@ const views = {
             const config = await api.get('/config/providers');
             const genSelect = document.getElementById('ai-gen-provider');
             const embedSelect = document.getElementById('ai-embed-provider');
-            const vectorDbSelect = document.getElementById('vector-db-provider');
             const embeddingSizeSelect = document.getElementById('embedding-size');
-            const retrievalInput = document.getElementById('retrieval-top-k');
-            const chunkStrategySelect = document.getElementById('chunk-strategy');
-            const chunkSizeInput = document.getElementById('chunk-size');
-            const chunkOverlapInput = document.getElementById('chunk-overlap');
-            const parentChunkSizeInput = document.getElementById('parent-chunk-size');
-            const parentChunkOverlapInput = document.getElementById('parent-chunk-overlap');
-            const candidateInput = document.getElementById('retrieval-candidate-k');
-            const hybridEnabledInput = document.getElementById('retrieval-hybrid-enabled');
-            const hybridAlphaInput = document.getElementById('retrieval-hybrid-alpha');
-            const rewriteEnabledInput = document.getElementById('query-rewrite-enabled');
-            const rerankEnabledInput = document.getElementById('retrieval-rerank-enabled');
-            const rerankTopKInput = document.getElementById('retrieval-rerank-top-k');
 
             const genProviders = config.available?.llm || [];
             const embedProviders = config.available?.embedding || [];
-            const vectorProviders = config.available?.vector_db || [];
 
 
             const labelMap = {
@@ -1057,9 +1042,7 @@ const views = {
                 'cerebras-gpt-oss-120b': 'Cerebras: GPT-oss 120B',
                 cohere: 'Cohere',
                 voyage: 'Voyage AI',
-                'bge-m3': 'BAAI/bge-m3 (local)',
-                pgvector: 'pgvector',
-                qdrant: 'Qdrant'
+                'bge-m3': 'BAAI/bge-m3 (local)'
             };
 
             genProviders.forEach((name) => {
@@ -1078,69 +1061,20 @@ const views = {
                 embedSelect.appendChild(opt);
             });
 
-            vectorProviders.forEach((name) => {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = labelMap[name] || name;
-                if (config.vector_db_provider === name) opt.selected = true;
-                vectorDbSelect.appendChild(opt);
-            });
-
-            if (typeof config.retrieval_top_k === 'number') {
-                retrievalInput.value = String(config.retrieval_top_k);
-                state.retrievalTopK = config.retrieval_top_k;
-            }
-
             if (typeof config.voyage_output_dimension === 'number') {
                 embeddingSizeSelect.value = String(config.voyage_output_dimension);
             }
-
-            if (config.chunk_strategy) chunkStrategySelect.value = config.chunk_strategy;
-            if (typeof config.chunk_size === 'number') chunkSizeInput.value = String(config.chunk_size);
-            if (typeof config.chunk_overlap === 'number') chunkOverlapInput.value = String(config.chunk_overlap);
-            if (typeof config.parent_chunk_size === 'number') parentChunkSizeInput.value = String(config.parent_chunk_size);
-            if (typeof config.parent_chunk_overlap === 'number') parentChunkOverlapInput.value = String(config.parent_chunk_overlap);
-            if (typeof config.retrieval_candidate_k === 'number') candidateInput.value = String(config.retrieval_candidate_k);
-            if (typeof config.retrieval_hybrid_enabled === 'boolean') hybridEnabledInput.checked = config.retrieval_hybrid_enabled;
-            if (typeof config.retrieval_hybrid_alpha === 'number') hybridAlphaInput.value = String(config.retrieval_hybrid_alpha);
-            if (typeof config.query_rewrite_enabled === 'boolean') rewriteEnabledInput.checked = config.query_rewrite_enabled;
-            if (typeof config.retrieval_rerank_enabled === 'boolean') rerankEnabledInput.checked = config.retrieval_rerank_enabled;
-            if (typeof config.retrieval_rerank_top_k === 'number') rerankTopKInput.value = String(config.retrieval_rerank_top_k);
 
             document.getElementById('save-ai-config-btn').onclick = async () => {
                 const btn = document.getElementById('save-ai-config-btn');
                 setButtonLoading(btn, true);
                 try {
-                    const retrievalValue = parseInt(retrievalInput.value, 10);
                     const embeddingSizeValue = parseInt(embeddingSizeSelect.value, 10);
-                    const chunkSizeValue = parseInt(chunkSizeInput.value, 10);
-                    const chunkOverlapValue = parseInt(chunkOverlapInput.value, 10);
-                    const parentChunkSizeValue = parseInt(parentChunkSizeInput.value, 10);
-                    const parentChunkOverlapValue = parseInt(parentChunkOverlapInput.value, 10);
-                    const candidateValue = parseInt(candidateInput.value, 10);
-                    const hybridAlphaValue = parseFloat(hybridAlphaInput.value);
-                    const rerankTopKValue = parseInt(rerankTopKInput.value, 10);
                     await api.post('/config/providers', {
                         llm_provider: genSelect.value,
                         embedding_provider: embedSelect.value,
-                        vector_db_provider: vectorDbSelect.value,
-                        retrieval_top_k: Number.isFinite(retrievalValue) ? retrievalValue : undefined,
-                        voyage_output_dimension: Number.isFinite(embeddingSizeValue) ? embeddingSizeValue : undefined,
-                        chunk_strategy: chunkStrategySelect.value,
-                        chunk_size: Number.isFinite(chunkSizeValue) ? chunkSizeValue : undefined,
-                        chunk_overlap: Number.isFinite(chunkOverlapValue) ? chunkOverlapValue : undefined,
-                        parent_chunk_size: Number.isFinite(parentChunkSizeValue) ? parentChunkSizeValue : undefined,
-                        parent_chunk_overlap: Number.isFinite(parentChunkOverlapValue) ? parentChunkOverlapValue : undefined,
-                        retrieval_candidate_k: Number.isFinite(candidateValue) ? candidateValue : undefined,
-                        retrieval_hybrid_enabled: hybridEnabledInput.checked,
-                        retrieval_hybrid_alpha: Number.isFinite(hybridAlphaValue) ? hybridAlphaValue : undefined,
-                        query_rewrite_enabled: rewriteEnabledInput.checked,
-                        retrieval_rerank_enabled: rerankEnabledInput.checked,
-                        retrieval_rerank_top_k: Number.isFinite(rerankTopKValue) ? rerankTopKValue : undefined
+                        voyage_output_dimension: Number.isFinite(embeddingSizeValue) ? embeddingSizeValue : undefined
                     });
-                    if (Number.isFinite(retrievalValue)) {
-                        state.retrievalTopK = retrievalValue;
-                    }
                     showNotification(i18n[state.lang].success_saved, 'success');
                 } catch (e) {
                     console.error(e);
@@ -2509,9 +2443,6 @@ async function handleChatSubmit() {
 
     try {
         const payload = { query, language };
-        if (Number.isInteger(state.retrievalTopK)) {
-            payload.top_k = state.retrievalTopK;
-        }
 
         // ── Stream via SSE (fetch + ReadableStream) ──
         const response = await fetch(`${API_BASE_URL}/projects/${projectId}/query/stream`, {
@@ -2585,9 +2516,6 @@ async function handleChatSubmit() {
         console.warn('Stream failed, falling back to non-streaming:', error.message);
         try {
             const payload = { query, language };
-            if (Number.isInteger(state.retrievalTopK)) {
-                payload.top_k = state.retrievalTopK;
-            }
             const result = await api.post(`/projects/${projectId}/query`, payload);
             // Remove indicator
             const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);

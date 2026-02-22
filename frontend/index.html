@@ -533,11 +533,6 @@
                     </div>
 
                     <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="vector_db_label">قاعدة المتجهات</label>
-                        <select id="vector-db-provider" class="form-control"></select>
-                    </div>
-
-                    <div class="config-section mt-4">
                         <label class="config-label" data-i18n="embedding_size_label">أبعاد التضمين</label>
                         <select id="embedding-size" class="form-control">
                             <option value="256">256</option>
@@ -545,89 +540,6 @@
                             <option value="1024">1024</option>
                             <option value="2048">2048</option>
                         </select>
-                    </div>
-                </div>
-
-                <!-- Chunking Group -->
-                <div class="config-group">
-                    <div class="config-group-title"><i class="fas fa-puzzle-piece"></i> <span data-i18n="config_group_chunking">التجزئة</span></div>
-
-                    <div class="config-section">
-                        <label class="config-label" data-i18n="chunk_strategy_label">استراتيجية التجزئة</label>
-                        <select id="chunk-strategy" class="form-control">
-                            <option value="parent_child" data-i18n="chunk_strategy_parent">أب/ابن (من الصغير للكبير)</option>
-                            <option value="simple" data-i18n="chunk_strategy_simple">بسيطة</option>
-                        </select>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="chunk_size_label">حجم المقطع</label>
-                        <input id="chunk-size" type="number" min="100" class="form-control" />
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="chunk_overlap_label">تداخل المقاطع</label>
-                        <input id="chunk-overlap" type="number" min="0" class="form-control" />
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="parent_chunk_size_label">حجم المقطع الأب</label>
-                        <input id="parent-chunk-size" type="number" min="100" class="form-control" />
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="parent_chunk_overlap_label">تداخل المقطع الأب</label>
-                        <input id="parent-chunk-overlap" type="number" min="0" class="form-control" />
-                    </div>
-                </div>
-
-                <!-- Retrieval Group -->
-                <div class="config-group">
-                    <div class="config-group-title"><i class="fas fa-magnifying-glass"></i> <span data-i18n="config_group_retrieval">الاسترجاع</span></div>
-
-                    <div class="config-section">
-                        <label class="config-label" data-i18n="retrieval_top_k_label">عدد المقاطع المسترجعة</label>
-                        <input id="retrieval-top-k" type="number" min="1" max="20" class="form-control" />
-                        <p class="config-desc" data-i18n="retrieval_top_k_desc">عدد المقاطع المستخدمة للإجابة.</p>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="retrieval_candidate_k_label">عدد المرشحين الأولي</label>
-                        <input id="retrieval-candidate-k" type="number" min="1" class="form-control" />
-                    </div>
-
-                    <div class="config-section mt-4 toggle-wrap">
-                        <label class="config-label" data-i18n="hybrid_enabled_label">البحث الهجين</label>
-                        <label class="toggle-switch">
-                            <input id="retrieval-hybrid-enabled" type="checkbox" />
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="hybrid_alpha_label">وزن الدلالي</label>
-                        <input id="retrieval-hybrid-alpha" type="number" step="0.05" min="0" max="1" class="form-control" />
-                    </div>
-
-                    <div class="config-section mt-4 toggle-wrap">
-                        <label class="config-label" data-i18n="rewrite_enabled_label">إعادة صياغة الاستعلام</label>
-                        <label class="toggle-switch">
-                            <input id="query-rewrite-enabled" type="checkbox" />
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-
-                    <div class="config-section mt-4 toggle-wrap">
-                        <label class="config-label" data-i18n="rerank_enabled_label">إعادة الترتيب</label>
-                        <label class="toggle-switch">
-                            <input id="retrieval-rerank-enabled" type="checkbox" />
-                            <span class="toggle-slider"></span>
-                        </label>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="rerank_top_k_label">عدد إعادة الترتيب</label>
-                        <input id="retrieval-rerank-top-k" type="number" min="1" class="form-control" />
                     </div>
                 </div>
 

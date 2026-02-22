@@ -113,8 +113,6 @@ echo 5. Create project directories
 echo ========================================
 if not exist "uploads\" mkdir uploads
 echo [✓] uploads directory created
-if not exist "qdrant_data\" mkdir qdrant_data
-echo [✓] qdrant_data directory created
 echo.
 
 :: Database setup with Docker
@@ -132,8 +130,7 @@ if errorlevel 1 (
     echo Alternatively, set up PostgreSQL manually:
     echo   1. Install PostgreSQL
     echo   2. Create database: CREATE DATABASE ragmind;
-    echo   3. Enable pgvector: CREATE EXTENSION vector;
-    echo   4. Update DATABASE_URL in .env
+    echo   3. Update DATABASE_URL in .env
     echo.
     goto skip_docker
 )
@@ -155,7 +152,7 @@ if errorlevel 1 (
     if errorlevel 1 (
         echo [ERROR] Failed to start Docker services!
     ) else (
-        echo [✓] PostgreSQL and Qdrant containers started
+        echo [✓] PostgreSQL container started
         echo.
         echo Waiting for database to be ready...
         timeout /t 5 /nobreak >nul
@@ -179,7 +176,6 @@ if errorlevel 1 (
         echo Please check:
         echo   - PostgreSQL connection
         echo   - DATABASE_URL in .env
-        echo   - pgvector extension installed
     ) else (
         echo [✓] Database initialized successfully
     )

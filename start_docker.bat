@@ -32,12 +32,12 @@ echo [INFO] Stopping any old RAGMind containers...
 docker compose down >nul 2>&1
 
 REM Also remove orphan containers with the same names (from previous runs or manual creates)
-for %%C in (ragmind-postgres ragmind-qdrant) do (
+for %%C in (ragmind-postgres) do (
     docker rm -f %%C >nul 2>&1
 )
 
 REM Start services
-echo Starting PostgreSQL and Qdrant containers...
+echo Starting PostgreSQL container...
 docker compose up -d
 
 if errorlevel 1 (
@@ -53,7 +53,6 @@ echo ========================================
 echo.
 echo Services running:
 echo   - PostgreSQL: localhost:5555
-echo   - Qdrant:     localhost:6333
 echo.
 echo Database connection string:
 echo   postgresql://ragmind:ragmind123@localhost:5555/ragmind

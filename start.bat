@@ -6,7 +6,7 @@ echo    RAGMind One-Click Start
 echo ========================================
 echo.
 
-REM Start Docker services (Postgres + Qdrant)
+REM Start Docker services (Postgres)
 call start_docker.bat
 if errorlevel 1 (
 	echo [ERROR] Docker services failed to start.
