@@ -1,6 +1,6 @@
 """
 Query Routes.
-API endpoints for querying documents.
+API endpoints for querying project transcripts.
 """
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -64,8 +64,8 @@ async def query_project(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Ask a question about project documents.
-    Returns AI-generated answer with sources.
+    Ask a question about project transcript content.
+    Returns AI-generated answer with source references.
     """
     await _verify_project_access(db, project_id, user)
     try:
@@ -106,7 +106,7 @@ async def query_project_stream(
 ):
     """
     Stream an AI-generated answer via Server-Sent Events.
-    Emits: sources event, then token events, then [DONE].
+    Emits: source references event, then token events, then [DONE].
     """
     await _verify_project_access(db, project_id, user)
     query_controller = get_query_controller()

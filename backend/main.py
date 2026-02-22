@@ -53,19 +53,19 @@ _app_kwargs = dict(
     title=settings.api_title,
     version=settings.api_version,
     description="""
-    RAGMind - Retrieval Augmented Generation System
+    RAGMind - AI Requirements Engineering Platform
     
-    A powerful document processing and question-answering API using:
+    A transcript-first requirements and Q&A API using:
     - Google Gemini 2.5 Flash for LLM capabilities
-    - PostgreSQL with pgvector for vector storage
-    - LangChain for document processing
+    - PostgreSQL for project data, chat history, and SRS drafts
+    - Document transcript extraction (PDF, DOCX, TXT)
     
     ## Features
     - Project-based document organization
     - Multi-format document support (PDF, TXT, DOCX)
-    - Automatic text chunking and embedding
-    - Vector similarity search
-    - AI-powered question answering
+    - Transcript-grounded question answering with sources
+    - Guided interview workflow for requirements gathering
+    - Automated SRS draft generation and PDF export
     - Multi-language support (Arabic/English)
     """,
     lifespan=lifespan
