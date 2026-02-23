@@ -50,9 +50,15 @@ class SRSService:
         if not summary:
             raise ValueError("No summary found for this project")
 
-        # Use the summary as the conversation context
-        conversation = json.dumps(summary, ensure_ascii=False, indent=2)
-        prompt = self._build_prompt(conversation, language)
+        # Fetch the latest 10 Q&A messages for richer context
+        recent_messages = await self._get_recent_qa_messages(db, project_id, limit=10)
+        qa_context = self._format_conversation(recent_messages)
+
+        prompt = self._build_prompt(
+            summary=json.dumps(summary, ensure_ascii=False, indent=2),
+            qa_context=qa_context,
+            language=language,
+        )
 
         llm_provider = LLMProviderFactory.create_provider()
         raw = await llm_provider.generate_text(
@@ -80,8 +86,6 @@ class SRSService:
             refined_result = await self.judging_service.judge_and_refine(
                 srs_content=content,
                 language=language,
-                store_refined=False,  
-                db=None,
                 project_id=None,
             )
 
@@ -92,7 +96,6 @@ class SRSService:
             draft.status = "refined"
             draft.content = refined_result["refined_srs"]
 
-
             await db.commit()
             logger.info(f"Draft refined and updated in DB as version {refined_version} for project {project_id}")
 
@@ -100,7 +103,10 @@ class SRSService:
             await db.rollback()
             logger.error(f"Failed to refine SRS automatically: {e}")
 
-        await db.refresh(draft)  
+        # Ensure draft is persistent before refresh
+        db.add(draft)
+        await db.flush()
+        await db.refresh(draft)
         return draft
 
     def export_pdf(self, draft: SRSDraft) -> bytes:
@@ -127,9 +133,9 @@ class SRSService:
         fn = "UniFont" if font_registered else "Helvetica"
 
         # ── Color palette ──
-        BRAND = (232, 93, 42)     # accent orange
-        DARK = (33, 37, 41)       # near-black
-        MUTED = (108, 117, 125)   # grey
+        BRAND = (232, 93, 42)      # accent orange
+        DARK = (33, 37, 41)        # near-black
+        MUTED = (108, 117, 125)    # grey
         LIGHT_BG = (248, 249, 250) # light grey fill
         WHITE = (255, 255, 255)
 
@@ -241,7 +247,6 @@ class SRSService:
             # Summary in a light-grey box
             pdf.set_fill_color(*LIGHT_BG)
             pdf.set_x(pdf.l_margin)
-            y_before = pdf.get_y()
             reset_body()
             pdf.set_font(fn, "", 10)
             text = safe(summary)
@@ -356,6 +361,23 @@ class SRSService:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
+    async def _get_recent_qa_messages(
+        self, db: AsyncSession, project_id: int, limit: int = 10
+    ) -> List[ChatMessage]:
+        """Return the most recent `limit` user/assistant messages, in chronological order."""
+        stmt = (
+            select(ChatMessage)
+            .where(
+                ChatMessage.project_id == project_id,
+                ChatMessage.role.in_(["user", "assistant"]),
+            )
+            .order_by(ChatMessage.created_at.desc())
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        # Reverse to restore chronological order for the prompt
+        return list(reversed(result.scalars().all()))
+
     async def _next_version(self, db: AsyncSession, project_id: int) -> int:
         stmt = select(func.max(SRSDraft.version)).where(SRSDraft.project_id == project_id)
         result = await db.execute(stmt)
@@ -372,31 +394,34 @@ class SRSService:
         return "\n".join(lines)
 
     @staticmethod
-    def _build_prompt(conversation: str, language: str) -> str:
+    def _build_prompt(summary: str, qa_context: str, language: str) -> str:
+        qa_block = f"\nLatest Q&A:\n{qa_context}\n" if qa_context.strip() else ""
+
         if language == "ar":
             return (
-                "أنت محلل أعمال محترف. حلّل المحادثة التالية وأنشئ مسودة SRS بنظام JSON فقط.\n"
+                "أنت محلل أعمال محترف. حلّل الملخص وآخر الأسئلة والأجوبة التالية وأنشئ مسودة SRS بنظام JSON فقط.\n"
                 "قواعد مهمة:\n"
                 "1) أخرج JSON فقط بدون نص إضافي.\n"
                 "2) استخدم المفاتيح التالية: summary, metrics, sections, questions, next_steps.\n"
                 "3) metrics: قائمة عناصر {label, value}.\n"
                 "4) sections: قائمة {title, confidence, items}.\n"
                 "5) questions و next_steps قوائم نصية.\n\n"
-                "المحادثة:\n"
-                f"{conversation}\n\n"
+                f"الملخص:\n{summary}\n"
+                f"{qa_block}\n"
                 "الإخراج (JSON فقط):"
             )
 
         return (
-            "You are a senior business analyst. Read the conversation and produce an SRS draft as JSON only.\n"
+            "You are a senior business analyst. Read the summary and the latest Q&A exchanges, "
+            "then produce an SRS draft as JSON only.\n"
             "Rules:\n"
             "1) Output JSON only, no extra text.\n"
             "2) Use keys: summary, metrics, sections, questions, next_steps.\n"
             "3) metrics is a list of {label, value}.\n"
             "4) sections is a list of {title, confidence, items}.\n"
             "5) questions and next_steps are string arrays.\n\n"
-            "Conversation:\n"
-            f"{conversation}\n\n"
+            f"Summary:\n{summary}\n"
+            f"{qa_block}\n"
             "Output (JSON only):"
         )
 
