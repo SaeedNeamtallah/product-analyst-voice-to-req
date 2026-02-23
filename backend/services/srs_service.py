@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database.models import ChatMessage, SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
 from backend.services.judging_service import JudgingService
+from backend.services.interview_service import InterviewService
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +25,7 @@ class SRSService:
     """Generate and export SRS drafts from project chat messages."""
     def __init__(self):
         self.judging_service = JudgingService()
+        self.interview_service = InterviewService()
 
     async def get_latest_draft(self, db: AsyncSession, project_id: int) -> SRSDraft | None:
         stmt = (
@@ -41,11 +43,15 @@ class SRSService:
         project_id: int,
         language: str = "ar",
     ) -> SRSDraft:
-        messages = await self._get_project_messages(db, project_id)
-        if not messages:
-            raise ValueError("No chat messages found for this project")
 
-        conversation = self._format_conversation(messages)
+        # Fetch the latest summary from InterviewService
+        interview_result = await self.interview_service.get_next_question(db, project_id, language)
+        summary = interview_result.get("summary")
+        if not summary:
+            raise ValueError("No summary found for this project")
+
+        # Use the summary as the conversation context
+        conversation = json.dumps(summary, ensure_ascii=False, indent=2)
         prompt = self._build_prompt(conversation, language)
 
         llm_provider = LLMProviderFactory.create_provider()
