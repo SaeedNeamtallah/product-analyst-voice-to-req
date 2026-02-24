@@ -105,7 +105,7 @@ async def export_srs(
     if not draft:
         raise HTTPException(status_code=404, detail="SRS draft not found")
 
-    pdf_bytes = service.export_pdf(draft)
+    pdf_bytes = await service.export_pdf(db, project_id)
     filename = f"srs_project_{project_id}_v{draft.version}.pdf"
     return Response(
         content=pdf_bytes,

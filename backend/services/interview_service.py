@@ -1,10 +1,10 @@
 """
-Guided interview service -- smart business analyst agent.
+    Guided interview service -- smart business analyst agent.
 
-Uses a dynamic slot-filling state machine that classifies information
-into the right SRS area on every turn, continuously populating the SRS
-JSON during the conversation (not at the end). Tracks coverage per area
-and produces structured summaries.
+    Uses a dynamic slot-filling state machine that classifies information
+    into the right SRS area on every turn, continuously populating the SRS
+    JSON during the conversation (not at the end). Tracks coverage per area
+    and produces structured summaries.
 """
 from __future__ import annotations
 

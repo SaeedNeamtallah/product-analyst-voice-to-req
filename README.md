@@ -282,6 +282,11 @@ classDiagram
 - Python 3.8+
 - Docker Desktop
 - API keys: Gemini (required), Cohere or Voyage (for embeddings)
+- **Optional for PDF exports:**
+  - `cairosvg` Python package (`pip install cairosvg`)
+  - Mermaid CLI (`npm install -g @mermaid-js/mermaid-cli` or download from https://github.com/mermaid-js/mermaid-cli)
+
+  Without these the service will include raw Mermaid source text instead of rendered diagrams.
 
 ### Quick Start (Windows)
 
