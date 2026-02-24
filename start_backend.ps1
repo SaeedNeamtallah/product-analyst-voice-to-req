@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
 Write-Host '========================================' -ForegroundColor Cyan
-Write-Host '   RAGMind Backend Server (PowerShell)' -ForegroundColor Cyan
+Write-Host '   Tawasul Backend Server (PowerShell)' -ForegroundColor Cyan
 Write-Host '========================================' -ForegroundColor Cyan
 Write-Host ''
 
@@ -69,6 +69,30 @@ function Wait-PostgresHostPort {
     throw "PostgreSQL host port 127.0.0.1:$Port is not reachable."
 }
 
+function Wait-LocalPortReady {
+    param(
+        [int]$Port,
+        [int]$MaxAttempts = 30,
+        [int]$SleepSeconds = 1
+    )
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        try {
+            $ok = Test-NetConnection -ComputerName '127.0.0.1' -Port $Port -WarningAction SilentlyContinue
+            if ($ok.TcpTestSucceeded) {
+                Write-Host "[OK] Local port 127.0.0.1:$Port is reachable" -ForegroundColor Green
+                return
+            }
+        } catch {
+            # ignore and retry
+        }
+
+        Start-Sleep -Seconds $SleepSeconds
+    }
+
+    throw "Port 127.0.0.1:$Port did not become reachable in time."
+}
+
 function Ensure-PostgresPortBinding {
     param([int]$ExpectedHostPort)
 
@@ -104,7 +128,7 @@ function Get-PostgresContainerId {
         return $containerId
     }
 
-    $fallbackRaw = docker ps --filter "name=ragmind-postgres" --format "{{.ID}}" 2>$null | Select-Object -First 1
+    $fallbackRaw = docker ps --filter "name=tawasul-postgres" --format "{{.ID}}" 2>$null | Select-Object -First 1
     $containerId = if ($null -eq $fallbackRaw) { '' } else { "$fallbackRaw".Trim() }
     if (-not [string]::IsNullOrWhiteSpace($containerId)) {
         return $containerId
@@ -166,10 +190,10 @@ function Set-DatabaseUrlPort {
     )
 
     if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
-        $dbUser = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { 'ragmind' } else { $env:POSTGRES_USER }
+        $dbUser = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_USER)) { 'tawasul' } else { $env:POSTGRES_USER }
         $dbPass = if ([string]::IsNullOrWhiteSpace($env:POSTGRES_PASSWORD)) { '' } else { $env:POSTGRES_PASSWORD }
         $auth = if ([string]::IsNullOrWhiteSpace($dbPass)) { $dbUser } else { "{0}:{1}" -f $dbUser, $dbPass }
-        return "postgresql+asyncpg://$auth@localhost:$Port/ragmind"
+        return "postgresql+asyncpg://$auth@localhost:$Port/tawasul"
     }
 
     if ($DatabaseUrl -match '@([^/:]+):(\d+)/(.*)$') {
@@ -195,6 +219,118 @@ function Get-DatabaseUrlRaw {
     }
 
     return ''
+}
+
+function Get-DatabaseIdentityFromUrl {
+    param([string]$DatabaseUrl)
+
+    if ([string]::IsNullOrWhiteSpace($DatabaseUrl)) {
+        return $null
+    }
+
+    $pattern = 'postgresql\+asyncpg://([^:]+):([^@]+)@[^/]+/([^\s]+)'
+    if ($DatabaseUrl -notmatch $pattern) {
+        return $null
+    }
+
+    return @{
+        User = $Matches[1]
+        Password = $Matches[2]
+        Database = $Matches[3]
+    }
+}
+
+function Invoke-PostgresQuery {
+    param(
+        [Parameter(Mandatory = $true)][string]$ContainerId,
+        [Parameter(Mandatory = $true)][string]$User,
+        [Parameter(Mandatory = $true)][string]$Password,
+        [Parameter(Mandatory = $true)][string]$Query
+    )
+
+    $escapedQuery = $Query.Replace('"', '""')
+    $commandLine = "docker exec -e PGPASSWORD=$Password $ContainerId psql -U $User -d postgres -tAc `"$escapedQuery`""
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        $output = cmd /c "$commandLine 2>nul"
+        $exitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if ($null -ne $output) {
+        $output = @($output | Where-Object {
+            $line = "$_"
+            ($line -notmatch 'has no actual collation version') -and ($line -notmatch '^WARNING:')
+        })
+    }
+
+    if ($exitCode -ne 0) {
+        return $null
+    }
+
+    return "$output".Trim()
+}
+
+function Ensure-DatabaseIdentity {
+    param([string]$DatabaseUrl)
+
+    $identity = Get-DatabaseIdentityFromUrl -DatabaseUrl $DatabaseUrl
+    if ($null -eq $identity) {
+        Write-Host '[WARN] Could not parse DATABASE_URL for role/db bootstrap. Skipping identity check.' -ForegroundColor Yellow
+        return
+    }
+
+    $containerId = Get-PostgresContainerId
+    $desiredUser = $identity.User
+    $desiredPassword = $identity.Password
+    $desiredDatabase = $identity.Database
+
+    $adminCandidates = @(
+        @{ User = $desiredUser; Password = $desiredPassword },
+        @{ User = 'ragmind'; Password = 'ragmind123' },
+        @{ User = 'tawasul'; Password = 'tawasul123' },
+        @{ User = 'postgres'; Password = 'postgres' },
+        @{ User = 'postgres'; Password = '' }
+    )
+
+    $adminAccount = $null
+    foreach ($candidate in $adminCandidates) {
+        $probe = Invoke-PostgresQuery -ContainerId $containerId -User $candidate.User -Password $candidate.Password -Query 'SELECT 1'
+        if ($probe -eq '1') {
+            $adminAccount = $candidate
+            break
+        }
+    }
+
+    if ($null -eq $adminAccount) {
+        Write-Host '[WARN] Could not authenticate to PostgreSQL for bootstrap. Skipping role/db auto-fix.' -ForegroundColor Yellow
+        return
+    }
+
+    $roleExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_roles WHERE rolname = '$desiredUser'"
+    if ($roleExists -ne '1') {
+        $escapedPasswordSql = $desiredPassword.Replace("'", "''")
+        $createRole = "CREATE ROLE `"$desiredUser`" LOGIN PASSWORD '$escapedPasswordSql'"
+        $created = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query $createRole
+        if ($null -eq $created) {
+            throw "Failed to create PostgreSQL role '$desiredUser'."
+        }
+        Write-Host "[INFO] Created PostgreSQL role '$desiredUser'." -ForegroundColor Yellow
+    }
+
+    $dbExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_database WHERE datname = '$desiredDatabase'"
+    if ($dbExists -ne '1') {
+        $createDb = "CREATE DATABASE `"$desiredDatabase`" OWNER `"$desiredUser`""
+        $createdDb = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query $createDb
+        if ($null -eq $createdDb) {
+            throw "Failed to create PostgreSQL database '$desiredDatabase'."
+        }
+        Write-Host "[INFO] Created PostgreSQL database '$desiredDatabase' (owner '$desiredUser')." -ForegroundColor Yellow
+    }
 }
 
 if (-not (Test-CommandExists -Name 'docker')) {
@@ -225,6 +361,7 @@ Invoke-NativeChecked { docker compose up -d }
 Ensure-PostgresPortBinding -ExpectedHostPort $dbPort
 Wait-PostgresReady
 Wait-PostgresHostPort -Port $dbPort
+Ensure-DatabaseIdentity -DatabaseUrl $env:DATABASE_URL
 Write-Host ''
 
 if (-not (Test-CommandExists -Name 'uv')) {
@@ -240,7 +377,10 @@ Write-Host '[INFO] Activating virtual environment...' -ForegroundColor Yellow
 & .\venv\Scripts\Activate.ps1
 
 Write-Host '[INFO] Installing/updating backend dependencies...' -ForegroundColor Yellow
-Invoke-NativeChecked { uv pip install -r .\backend\requirements.txt }
+Invoke-NativeChecked { uv pip install --python .\venv\Scripts\python.exe -r .\backend\requirements.txt }
+
+Write-Host '[INFO] Verifying critical imports...' -ForegroundColor Yellow
+Invoke-NativeChecked { .\venv\Scripts\python.exe -c "import dotenv, pydantic_settings, fastapi, sqlalchemy; print('imports-ok')" }
 
 Write-Host '[INFO] Initializing database schema...' -ForegroundColor Yellow
 Invoke-NativeChecked { python .\backend\init_database.py }
@@ -258,9 +398,13 @@ foreach ($port in $ports) {
     }
 }
 
-Write-Host '[INFO] Starting frontend static server on http://localhost:3000' -ForegroundColor Yellow
-$frontendPath = Join-Path $PSScriptRoot 'frontend'
-Start-Process powershell -ArgumentList '-NoExit', '-Command', "Set-Location -LiteralPath '$frontendPath'; python -m http.server 3000"
+Write-Host '[INFO] Starting frontend on http://localhost:3000' -ForegroundColor Yellow
+$legacyFrontendPath = Join-Path $PSScriptRoot 'frontend'
+Start-Process powershell -ArgumentList '-NoExit', '-Command', "Set-Location -LiteralPath '$legacyFrontendPath'; python -m http.server 3000"
+Write-Host '[✓] Legacy frontend started from frontend/ (python http.server).' -ForegroundColor Green
+
+Wait-LocalPortReady -Port 3000
+
 Start-Process 'http://localhost:3000'
 
 Write-Host ''

@@ -1,8 +1,8 @@
 @echo off
-REM RAGMind Docker Services Startup Script
+REM Tawasul Docker Services Startup Script
 
 echo ========================================
-echo    RAGMind - Docker Services
+echo    Tawasul - Docker Services
 echo ========================================
 echo.
 
@@ -28,11 +28,11 @@ echo [✓] Docker is running
 echo.
 
 REM Clean up any existing containers to avoid name conflicts
-echo [INFO] Stopping any old RAGMind containers...
+echo [INFO] Stopping any old Tawasul containers...
 docker compose down >nul 2>&1
 
 REM Also remove orphan containers with the same names (from previous runs or manual creates)
-for %%C in (ragmind-postgres) do (
+for %%C in (tawasul-postgres) do (
     docker rm -f %%C >nul 2>&1
 )
 
@@ -55,7 +55,7 @@ echo Services running:
 echo   - PostgreSQL: localhost:5555
 echo.
 echo Database connection string:
-echo   postgresql://ragmind:ragmind123@localhost:5555/ragmind
+echo   postgresql://tawasul:tawasul123@localhost:5555/tawasul
 echo.
 echo To stop services: stop_docker.bat
 echo To view logs: docker-compose logs -f

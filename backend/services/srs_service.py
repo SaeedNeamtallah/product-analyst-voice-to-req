@@ -3,19 +3,21 @@ SRS draft generation and export service.
 """
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
 from datetime import datetime
 from typing import Any, Dict, List
 
-from fpdf import FPDF
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.models import Asset, ChatMessage, SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
 from backend.services.judging_service import JudgingService
+from backend.services.srs_pdf_html_renderer import render_srs_pdf_html
+from backend.services.srs_snapshot_cache import SRSSnapshotCache
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,10 @@ class SRSService:
 
         conversation = self._format_conversation(messages)
         transcripts = self._format_transcripts(transcript_blocks)
+
+        # Quality gate: ensure there is enough content for a meaningful SRS
+        self._quality_gate(transcripts, conversation)
+
         prompt = self._build_prompt(conversation, transcripts, language)
 
         llm_provider = LLMProviderFactory.create_provider()
@@ -68,280 +74,34 @@ class SRSService:
         )
         db.add(draft)
         await db.flush()
-        """        
-        Refactor: 2026-02-15 - Adel Sobhy SRS REFINING
-        This is the implementation of the SRS refinement service.
-        """
+
         try:
             refined_result = await self.judging_service.judge_and_refine(
                 srs_content=content,
                 language=language,
-                store_refined=False,  
-                db=None,
-                project_id=None,
+                project_id=project_id,
             )
 
-            refined_version = version + 1
-
-            # Update the initial draft in-place with refined content
-            draft.version = refined_version
-            draft.status = "refined"
-            draft.content = refined_result["refined_srs"]
-
-
-            await db.commit()
-            logger.info(f"Draft refined and updated in DB as version {refined_version} for project {project_id}")
+            refined_srs = refined_result.get("refined_srs") if isinstance(refined_result, dict) else None
+            if refined_srs:
+                draft.status = "refined"
+                draft.content = refined_srs
+                logger.info("Draft refined for project %s", project_id)
 
         except Exception as e:
-            await db.rollback()
-            logger.error(f"Failed to refine SRS automatically: {e}")
+            logger.error("Failed to refine SRS automatically: %s", e)
 
-        await db.refresh(draft)  
+        await SRSSnapshotCache.set_from_draft(draft)
         return draft
 
     def export_pdf(self, draft: SRSDraft) -> bytes:
-        content = draft.content or {}
-        is_ar = (draft.language == "ar")
-
-        pdf = FPDF()
-        pdf.set_auto_page_break(auto=True, margin=20)
-
-        # ── Register Unicode font ──
-        import os
-        font_registered = False
-        for font_path in [
-            "C:/Windows/Fonts/arial.ttf",
-            "C:/Windows/Fonts/tahoma.ttf",
-            "C:/Windows/Fonts/segoeui.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        ]:
-            if os.path.isfile(font_path):
-                pdf.add_font("UniFont", "", font_path, uni=True)
-                pdf.add_font("UniFont", "B", font_path, uni=True)
-                font_registered = True
-                break
-        fn = "UniFont" if font_registered else "Helvetica"
-
-        # ── Color palette ──
-        BRAND = (232, 93, 42)     # accent orange
-        DARK = (33, 37, 41)       # near-black
-        MUTED = (108, 117, 125)   # grey
-        LIGHT_BG = (248, 249, 250) # light grey fill
-        WHITE = (255, 255, 255)
-
-        def safe(value: Any) -> str:
-            if value is None:
-                return ""
-            if isinstance(value, str):
-                return value
-            if isinstance(value, dict):
-                return json.dumps(value, ensure_ascii=False)
-            return str(value)
-
-        def reset_body():
-            pdf.set_text_color(*DARK)
-            pdf.set_font(fn, "", 10)
-            pdf.set_x(pdf.l_margin)
-
-        def draw_separator():
-            y = pdf.get_y() + 2
-            pdf.set_draw_color(*MUTED)
-            pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
-            pdf.set_y(y + 4)
-
-        def section_heading(number: int, title: str):
-            pdf.ln(4)
-            pdf.set_x(pdf.l_margin)
-            pdf.set_font(fn, "B", 13)
-            pdf.set_text_color(*BRAND)
-            pdf.cell(0, 8, f"{number}.  {title}", ln=True)
-            pdf.set_text_color(*DARK)
-            pdf.ln(1)
-
-        def bullet_item(text: str, indent: float = 6):
-            text = safe(text)
-            if not text.strip():
-                return
-            pdf.set_x(pdf.l_margin + indent)
-            pdf.set_font(fn, "", 10)
-            pdf.set_text_color(*DARK)
-            w = pdf.w - pdf.l_margin - pdf.r_margin - indent
-            pdf.multi_cell(w, 5.5, f"  {text}")
-            pdf.ln(0.5)
-
-        # ================================================================
-        # PAGE 1 — TITLE PAGE
-        # ================================================================
-        pdf.add_page()
-
-        # Brand header bar
-        pdf.set_fill_color(*BRAND)
-        pdf.rect(0, 0, pdf.w, 44, "F")
-        pdf.set_y(10)
-        pdf.set_font(fn, "B", 22)
-        pdf.set_text_color(*WHITE)
-        pdf.cell(0, 10, "RAGMind", align="C", ln=True)
-        pdf.set_font(fn, "", 11)
-        pdf.cell(0, 7, "AI-Powered Requirements Analyst", align="C", ln=True)
-
-        # Main title
-        pdf.set_y(60)
-        pdf.set_font(fn, "B", 24)
-        pdf.set_text_color(*DARK)
-        title_text = "Software Requirements Specification" if not is_ar else "مواصفات متطلبات البرمجيات"
-        pdf.cell(0, 12, title_text, align="C", ln=True)
-
-        # Subtitle line
-        pdf.ln(3)
-        pdf.set_draw_color(*BRAND)
-        mid = pdf.w / 2
-        pdf.line(mid - 30, pdf.get_y(), mid + 30, pdf.get_y())
-        pdf.ln(8)
-
-        # Meta info table
-        meta_labels = [
-            ("Project ID" if not is_ar else "رقم المشروع", str(draft.project_id)),
-            ("Version" if not is_ar else "الإصدار", f"v{draft.version}"),
-            ("Language" if not is_ar else "اللغة", "Arabic" if is_ar else "English"),
-            ("Status" if not is_ar else "الحالة", safe(draft.status).capitalize()),
-            ("Generated" if not is_ar else "تاريخ الإنشاء", self._format_dt(draft.created_at)),
-        ]
-        table_w = 100
-        table_x = (pdf.w - table_w) / 2
-        for label, value in meta_labels:
-            pdf.set_x(table_x)
-            pdf.set_font(fn, "B", 10)
-            pdf.set_text_color(*MUTED)
-            pdf.cell(50, 7, label, border=0)
-            pdf.set_font(fn, "", 10)
-            pdf.set_text_color(*DARK)
-            pdf.cell(50, 7, value, border=0, ln=True)
-
-        # Footer note on title page
-        pdf.set_y(250)
-        pdf.set_font(fn, "", 8)
-        pdf.set_text_color(*MUTED)
-        pdf.cell(0, 5, "Generated by RAGMind  |  https://ragmind.app", align="C", ln=True)
-
-        # ================================================================
-        # PAGE 2+ — CONTENT
-        # ================================================================
-        pdf.add_page()
-        section_num = 0
-
-        # ── 1. Executive Summary ──
-        summary = content.get("summary") or ""
-        if summary:
-            section_num += 1
-            section_heading(section_num, "Executive Summary" if not is_ar else "الملخص التنفيذي")
-            # Summary in a light-grey box
-            pdf.set_fill_color(*LIGHT_BG)
-            pdf.set_x(pdf.l_margin)
-            y_before = pdf.get_y()
-            reset_body()
-            pdf.set_font(fn, "", 10)
-            text = safe(summary)
-            if text.strip():
-                pdf.set_x(pdf.l_margin + 4)
-                w = pdf.w - pdf.l_margin - pdf.r_margin - 8
-                pdf.multi_cell(w, 5.5, text, fill=True)
-            pdf.ln(3)
-            draw_separator()
-
-        # ── 2. Key Metrics ──
-        metrics = content.get("metrics") or []
-        if isinstance(metrics, list) and metrics:
-            section_num += 1
-            section_heading(section_num, "Key Metrics" if not is_ar else "المقاييس الرئيسية")
-            col_w = (pdf.w - pdf.l_margin - pdf.r_margin) / 2
-            pdf.set_x(pdf.l_margin)
-            # Table header
-            pdf.set_fill_color(*BRAND)
-            pdf.set_text_color(*WHITE)
-            pdf.set_font(fn, "B", 10)
-            pdf.cell(col_w, 7, "Metric" if not is_ar else "المقياس", border=1, fill=True)
-            pdf.cell(col_w, 7, "Value" if not is_ar else "القيمة", border=1, fill=True, ln=True)
-            # Table rows
-            pdf.set_text_color(*DARK)
-            for i, m in enumerate(metrics):
-                if not isinstance(m, dict):
-                    continue
-                bg = LIGHT_BG if i % 2 == 0 else WHITE
-                pdf.set_fill_color(*bg)
-                pdf.set_x(pdf.l_margin)
-                pdf.set_font(fn, "B", 10)
-                pdf.cell(col_w, 7, safe(m.get("label", "")), border=1, fill=True)
-                pdf.set_font(fn, "", 10)
-                pdf.cell(col_w, 7, safe(m.get("value", "")), border=1, fill=True, ln=True)
-            pdf.ln(3)
-            draw_separator()
-
-        # ── 3+. Requirement Sections ──
-        sections = content.get("sections") or []
-        for section in sections:
-            if not isinstance(section, dict):
-                continue
-            section_num += 1
-            title = safe(section.get("title", "Section"))
-            confidence = safe(section.get("confidence", ""))
-
-            heading_text = title
-            if confidence:
-                heading_text = f"{title}  [{confidence}]"
-            section_heading(section_num, heading_text)
-
-            items = section.get("items", [])
-            if not isinstance(items, list):
-                items = [items]
-            for item in items:
-                bullet_item(item)
-            pdf.ln(1)
-            draw_separator()
-
-        # ── Open Questions ──
-        questions = content.get("questions") or []
-        if not isinstance(questions, list):
-            questions = [questions]
-        questions = [q for q in questions if safe(q).strip()]
-        if questions:
-            section_num += 1
-            section_heading(section_num, "Open Questions" if not is_ar else "أسئلة مفتوحة")
-            for item in questions:
-                bullet_item(item)
-            pdf.ln(1)
-            draw_separator()
-
-        # ── Next Steps ──
-        next_steps = content.get("next_steps") or []
-        if not isinstance(next_steps, list):
-            next_steps = [next_steps]
-        next_steps = [s for s in next_steps if safe(s).strip()]
-        if next_steps:
-            section_num += 1
-            section_heading(section_num, "Next Steps" if not is_ar else "الخطوات التالية")
-            for idx, item in enumerate(next_steps, 1):
-                text = safe(item)
-                if text.strip():
-                    pdf.set_x(pdf.l_margin + 6)
-                    pdf.set_font(fn, "B", 10)
-                    pdf.set_text_color(*BRAND)
-                    pdf.cell(8, 5.5, f"{idx}.")
-                    pdf.set_font(fn, "", 10)
-                    pdf.set_text_color(*DARK)
-                    w = pdf.w - pdf.l_margin - pdf.r_margin - 14
-                    pdf.multi_cell(w, 5.5, text)
-                    pdf.ln(0.5)
-
-        # ── Page numbers on all pages (except title) ──
-        total = pdf.page
-        for page_num in range(2, total + 1):
-            pdf.page = page_num
-            pdf.set_y(-15)
-            pdf.set_font(fn, "", 8)
-            pdf.set_text_color(*MUTED)
-            pdf.cell(0, 5, f"Page {page_num - 1} of {total - 1}", align="C")
-
-        return bytes(pdf.output())
+        try:
+            return render_srs_pdf_html(draft)
+        except Exception as exc:
+            raise RuntimeError(
+                "SRS PDF rendering failed. Ensure Node.js and Playwright Chromium are available "
+                "(run: npx playwright install chromium)."
+            ) from exc
 
     async def _get_project_messages(self, db: AsyncSession, project_id: int) -> List[ChatMessage]:
         stmt = (
@@ -376,7 +136,12 @@ class SRSService:
         lines = []
         for msg in messages:
             role = msg.role.lower()
-            prefix = "User" if role == "user" else "Assistant" if role == "assistant" else "System"
+            if role == "user":
+                prefix = "User"
+            elif role == "assistant":
+                prefix = "Assistant"
+            else:
+                prefix = "System"
             lines.append(f"{prefix}: {msg.content}")
         return "\n".join(lines)
 
@@ -393,49 +158,362 @@ class SRSService:
 
     @staticmethod
     def _build_prompt(conversation: str, transcripts: str, language: str) -> str:
+        # Truncate with visible markers so the LLM knows content may be cut
+        truncated_transcript = transcripts
+        truncated_chat = conversation
+        if len(transcripts) > 20000:
+            truncated_transcript = (
+                transcripts[:20000]
+                + "\n\n[TRANSCRIPT TRUNCATED — content beyond this point was omitted due to length. "
+                "Mark any sections where evidence was insufficient as confidence=low and add a question to the 'questions' array.]"
+            )
+        if len(conversation) > 8000:
+            truncated_chat = conversation[:8000] + "\n\n[CHAT TRUNCATED]"
+
         evidence_parts = []
-        if transcripts.strip():
-            evidence_parts.append(f"Interview transcripts:\n{transcripts[:20000]}")
-        if conversation.strip():
-            evidence_parts.append(f"Project chat:\n{conversation[:8000]}")
+        if truncated_transcript.strip():
+            evidence_parts.append(f"Interview transcripts:\n{truncated_transcript}")
+        if truncated_chat.strip():
+            evidence_parts.append(f"Project chat:\n{truncated_chat}")
         evidence = "\n\n".join(evidence_parts)
 
         if language == "ar":
             return (
-                "أنت محلل أعمال محترف. حلّل نصوص مقابلات المشروع (ومحادثات الفريق إن وجدت) وأنشئ مسودة SRS بنظام JSON فقط.\n"
-                "قواعد مهمة:\n"
-                "1) أخرج JSON فقط بدون نص إضافي.\n"
-                "2) استخدم المفاتيح التالية: summary, metrics, sections, questions, next_steps.\n"
-                "3) metrics: قائمة عناصر {label, value}.\n"
-                "4) sections: قائمة {title, confidence, items}.\n"
-                "5) questions و next_steps قوائم نصية.\n\n"
-                "مصادر المشروع:\n"
-                f"{evidence}\n\n"
+                "أنت مهندس متطلبات معتمد بخبرة تزيد عن 20 عامًا في كتابة وثائق SRS الاحترافية.\n\n"
+                "## قاعدة التأسيس الحاسمة\n"
+                "كل متطلب تكتبه يجب أن يكون مستنِدًا مباشرةً لتصريح صريح أو مُضمَّن بوضوح في النص المقدَّم. "
+                "لا تفترض ولا تخترع ولا تُضيف أنماطًا معيارية من مجال التطبيق. "
+                "إذا لم يتناول النص منطقةً ما، اتركها فارغة وأضف سؤالاً للعميل في قسم questions.\n\n"
+                "## تعريف مستوى الثقة\n"
+                "- \"high\": ذُكر صراحةً في موضعين أو أكثر من النص.\n"
+                "- \"medium\": ذُكر مرة واحدة، أو يُستشفّ بوضوح من تصريحات أخرى.\n"
+                "- \"low\": مستنتج من معرفة المجال؛ غير موجود مباشرةً في النص.\n\n"
+                "## الأقسام الإلزامية السبعة (استخدم هذه العناوين بالضبط)\n"
+                "1. نظرة عامة وأهداف المشروع\n"
+                "2. أصحاب المصلحة وأدوار المستخدمين\n"
+                "3. المتطلبات الوظيفية\n"
+                "4. المتطلبات غير الوظيفية\n"
+                "5. قيود النظام\n"
+                "6. خارج النطاق\n"
+                "7. أسئلة مفتوحة وافتراضات\n\n"
+                "## قصص المستخدمين ومعايير القبول\n"
+                "لكل ميزة رئيسية مذكورة من قِبل العميل يجب توليد:\n"
+                "- قصة مستخدم بصيغة: 'بوصفي [نوع المستخدم]، أريد [الفعل]، حتى أستطيع [الهدف]'.\n"
+                "- معيار قبول قابل للقياس بصيغة: 'يُعتبر الشرط محققًا عندما [حالة قابلة للتحقق]'.\n\n"
+                "## قواعد صياغة المتطلبات\n"
+                "- كل عنصر في sections.items يجب أن يكون متطلبًا ذريًا كاملاً بصيغة: 'يجب أن يوفر النظام...'.\n"
+                "- المقاييس تعكس فقط ما ذكره العميل صراحةً. لا تخترع مؤشرات أداء.\n"
+                "- الأسئلة يجب أن تكون موجهة للعميل، محددة، وقابلة للإجابة — وليست عامة.\n"
+                "- next_steps هي إجراءات مُرتَّبة حسب الأولوية للفريق التطويري.\n"
+                "- activity_diagrams يجب أن تحتوي مخطط نشاط لكل نشاط/تدفق رئيسي في المنتج.\n\n"
+                "## قواعد الإخراج الصارمة\n"
+                "1) أخرج JSON صالح فقط — بدون markdown، بدون نص إضافي.\n"
+                "2) لا تضف أقسامًا خارج الأقسام السبعة المحددة.\n"
+                "3) إذا كان القسم بدون أدلة من النص، اجعل items قائمة فارغة [] وأضف سؤالاً في questions.\n"
+                "4) تنسيق المخرجات:\n"
+                '   {"summary": "...", "metrics": [{"label": "...", "value": "..."}], '
+                '"sections": [{"title": "نظرة عامة وأهداف المشروع", "confidence": "high|medium|low", "items": ["يجب أن يوفر النظام..."]}], '
+                '"user_stories": [{"role": "مسؤول", "action": "إدارة المستخدمين", "goal": "ضمان الأمان", "acceptance_criteria": ["يُعتبر الشرط محققًا عندما يستطيع المسؤول..."]}], '
+                '"user_roles": [{"role": "مسؤول النظام", "description": "يدير المستخدمين والصلاحيات", "permissions": ["إضافة مستخدمين", "تعديل الأدوار"]}], '
+                '"activity_diagram": ["بداية -> دخول المستخدم -> تحقق النظام -> عرض لوحة التحكم"], '
+                '"activity_diagram_mermaid": "flowchart TD\\n  A[بداية] --> B[دخول المستخدم] --> C[تحقق النظام] --> D[عرض لوحة التحكم]", '
+                '"activity_diagrams": [{"title": "تدفق تسجيل الدخول", "activity_diagram": ["بداية -> إدخال بيانات -> تحقق -> لوحة التحكم"], "activity_diagram_mermaid": "flowchart TD\\n  A[بداية] --> B[إدخال بيانات] --> C[تحقق] --> D[لوحة التحكم]"}], '
+                '"questions": ["..."], "next_steps": ["..."]}\n\n'
+                f"مصادر المشروع:\n{evidence}\n\n"
                 "الإخراج (JSON فقط):"
             )
 
         return (
-            "You are a senior business analyst. Read project interview transcripts (and optional project chat) and produce an SRS draft as JSON only.\n"
-            "Rules:\n"
-            "1) Output JSON only, no extra text.\n"
-            "2) Use keys: summary, metrics, sections, questions, next_steps.\n"
-            "3) metrics is a list of {label, value}.\n"
-            "4) sections is a list of {title, confidence, items}.\n"
-            "5) questions and next_steps are string arrays.\n\n"
-            "Project sources:\n"
-            f"{evidence}\n\n"
+            "You are a certified Requirements Engineer with 20+ years writing professional SRS documents.\n\n"
+            "## CRITICAL GROUNDING RULE\n"
+            "Every requirement you write MUST be directly traceable to an explicit or strongly implied "
+            "statement in the provided transcript. Do NOT assume, invent, or pad with standard industry "
+            "patterns. If a domain area was not discussed, leave its section items empty and add a "
+            "client-facing question to the 'questions' array flagging the gap.\n\n"
+            "## Confidence Level Definition\n"
+            "- \"high\": explicitly stated in 2+ distinct places in the transcript.\n"
+            "- \"medium\": stated once, or clearly implied by other statements.\n"
+            "- \"low\": inferred from general domain knowledge; NOT directly in transcript.\n\n"
+            "## Required Sections — use EXACTLY these 7 titles:\n"
+            "1. Project Overview & Objectives\n"
+            "2. Stakeholders & User Roles\n"
+            "3. Functional Requirements\n"
+            "4. Non-Functional Requirements\n"
+            "5. System Constraints\n"
+            "6. Out of Scope\n"
+            "7. Open Questions & Assumptions\n\n"
+            "## User Stories & Acceptance Criteria\n"
+            "For every major feature mentioned by the client, you MUST generate:\n"
+            "- A user story in the format: 'As a [user type], I want [action], so that [goal]'.\n"
+            "- At least one measurable acceptance criterion: 'The feature is complete when [verifiable condition]'.\n\n"
+            "## Requirement Phrasing Rules\n"
+            "- Every item in sections.items must be an atomic, complete requirement in 'The system SHALL...' format.\n"
+            "- Metrics must reflect ONLY what the client explicitly mentioned. Do not invent KPIs.\n"
+            "- Questions must be client-facing, specific, and answerable — not generic.\n"
+            "- next_steps must be prioritized action items for the development team.\n"
+            "- activity_diagrams must include one activity diagram for each major product activity/flow.\n\n"
+            "## Strict Output Rules\n"
+            "1) Return valid JSON only — no markdown fences, no preamble.\n"
+            "2) Do NOT add sections outside the 7 listed above.\n"
+            "3) If a section has no evidence in the transcript, set its items to [] and add a question.\n"
+            "4) Output format:\n"
+            '   {"summary": "...", "metrics": [{"label": "...", "value": "..."}], '
+            '"sections": [{"title": "Project Overview & Objectives", "confidence": "high|medium|low", "items": ["The system SHALL..."]}], '
+            '"user_stories": [{"role": "Admin", "action": "manage users", "goal": "ensure security", "acceptance_criteria": ["The feature is complete when the admin can add/remove users and role changes are audit-logged"]}], '
+            '"user_roles": [{"role": "System Administrator", "description": "Manages users and permissions", "permissions": ["add users", "edit roles", "view audit log"]}], '
+            '"activity_diagram": ["Start -> User signs in -> System validates credentials -> Dashboard"], '
+            '"activity_diagram_mermaid": "flowchart TD\\n  A[Start] --> B[User signs in] --> C[System validates credentials] --> D[Dashboard]", '
+            '"activity_diagrams": [{"title": "Login Flow", "activity_diagram": ["Start -> Enter credentials -> Validate -> Dashboard"], "activity_diagram_mermaid": "flowchart TD\\n  A[Start] --> B[Enter credentials] --> C[Validate] --> D[Dashboard]"}], '
+            '"questions": ["..."], "next_steps": ["..."]}\n\n'
+            f"Project sources:\n{evidence}\n\n"
             "Output (JSON only):"
         )
 
     @staticmethod
+    def _quality_gate(transcripts: str, conversation: str) -> None:
+        """Raise ValueError if combined content is too thin to produce a meaningful SRS."""
+        combined = (transcripts + " " + conversation).strip()
+        word_count = len(combined.split())
+        if word_count < 80:
+            raise ValueError(
+                f"Insufficient content for SRS generation: {word_count} words found. "
+                "A minimum of 80 words is required across the transcript and chat history. "
+                "Please complete more interview turns before generating the SRS."
+            )
+
+    @staticmethod
     def _parse_json(raw: str) -> Dict[str, Any]:
+        cleaned = (raw or "").strip()
+        if not cleaned:
+            raise ValueError("Failed to parse SRS JSON: empty response")
+
+        # Remove markdown code fences if present.
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+
+        parsed = SRSService._try_parse_json_clean(cleaned)
+        if parsed is None:
+            parsed = SRSService._try_decode_embedded_json(cleaned)
+        if parsed is None:
+            parsed = SRSService._try_literal_eval_fallback(cleaned)
+
+        if not isinstance(parsed, dict):
+            raise ValueError("Failed to parse SRS JSON")
+
+        return SRSService._normalize_srs_content(parsed)
+
+    @staticmethod
+    def _try_parse_json_clean(cleaned: str) -> Any:
         try:
-            return json.loads(raw)
+            return json.loads(cleaned)
         except json.JSONDecodeError:
-            match = re.search(r"\{[\s\S]*\}", raw)
-            if not match:
-                raise ValueError("Failed to parse SRS JSON")
-            return json.loads(match.group(0))
+            return None
+
+    @staticmethod
+    def _try_decode_embedded_json(cleaned: str) -> Any:
+        first_brace = cleaned.find("{")
+        if first_brace == -1:
+            return None
+
+        decoder = json.JSONDecoder()
+        try:
+            parsed, _ = decoder.raw_decode(cleaned[first_brace:])
+            return parsed
+        except json.JSONDecodeError:
+            return None
+
+    @staticmethod
+    def _try_literal_eval_fallback(cleaned: str) -> Any:
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+        if first_brace == -1 or last_brace <= first_brace:
+            return None
+
+        candidate = cleaned[first_brace : last_brace + 1]
+        try:
+            return ast.literal_eval(candidate)
+        except (ValueError, SyntaxError):
+            return None
+
+    @staticmethod
+    def _normalize_srs_content(content: Dict[str, Any]) -> Dict[str, Any]:
+        """Guarantee the stored SRS content has the expected top-level shape."""
+        summary = content.get("summary")
+        if not isinstance(summary, str):
+            summary = "" if summary is None else str(summary)
+
+        metrics = content.get("metrics")
+        if not isinstance(metrics, list):
+            metrics = []
+
+        sections = content.get("sections")
+        if not isinstance(sections, list):
+            sections = []
+
+        questions = content.get("questions")
+        if not isinstance(questions, list):
+            questions = []
+
+        activity_diagram = content.get("activity_diagram")
+        if not isinstance(activity_diagram, list):
+            activity_diagram = []
+        activity_diagram = [str(line).strip() for line in activity_diagram if str(line or "").strip()]
+
+        activity_diagram_mermaid = content.get("activity_diagram_mermaid")
+        if not isinstance(activity_diagram_mermaid, str):
+            activity_diagram_mermaid = ""
+        activity_diagram_mermaid = activity_diagram_mermaid.strip()
+        if not activity_diagram_mermaid:
+            activity_diagram_mermaid = SRSService._build_mermaid_from_flow_lines(activity_diagram)
+
+        activity_diagrams = SRSService._normalize_activity_diagrams(
+            content.get("activity_diagrams"),
+            fallback_activity_diagram=activity_diagram,
+            fallback_mermaid=activity_diagram_mermaid,
+        )
+
+        next_steps = content.get("next_steps")
+        if not isinstance(next_steps, list):
+            next_steps = []
+
+        # Normalize user_stories
+        raw_user_stories = content.get("user_stories")
+        user_stories: List[Dict[str, Any]] = []
+        if isinstance(raw_user_stories, list):
+            for story in raw_user_stories:
+                if not isinstance(story, dict):
+                    continue
+                ac = story.get("acceptance_criteria")
+                if not isinstance(ac, list):
+                    ac = [str(ac).strip()] if ac else []
+                else:
+                    ac = [str(c).strip() for c in ac if str(c or "").strip()]
+                role = str(story.get("role") or "").strip()
+                action = str(story.get("action") or "").strip()
+                goal = str(story.get("goal") or "").strip()
+                if role or action or goal:
+                    user_stories.append({
+                        "role": role,
+                        "action": action,
+                        "goal": goal,
+                        "acceptance_criteria": ac,
+                    })
+
+        # Normalize user_roles
+        raw_user_roles = content.get("user_roles")
+        user_roles: List[Dict[str, Any]] = []
+        if isinstance(raw_user_roles, list):
+            for ur in raw_user_roles:
+                if not isinstance(ur, dict):
+                    continue
+                perms = ur.get("permissions")
+                if not isinstance(perms, list):
+                    perms = []
+                else:
+                    perms = [str(p).strip() for p in perms if str(p or "").strip()]
+                role_name = str(ur.get("role") or "").strip()
+                desc = str(ur.get("description") or "").strip()
+                if role_name:
+                    user_roles.append({
+                        "role": role_name,
+                        "description": desc,
+                        "permissions": perms,
+                    })
+
+        return {
+            "summary": summary,
+            "metrics": metrics,
+            "sections": sections,
+            "user_stories": user_stories,
+            "user_roles": user_roles,
+            "activity_diagram": activity_diagram,
+            "activity_diagram_mermaid": activity_diagram_mermaid,
+            "activity_diagrams": activity_diagrams,
+            "questions": questions,
+            "next_steps": next_steps,
+        }
+
+    @staticmethod
+    def _normalize_activity_diagrams(
+        value: Any,
+        fallback_activity_diagram: List[str],
+        fallback_mermaid: str,
+    ) -> List[Dict[str, Any]]:
+        diagrams: List[Dict[str, Any]] = []
+
+        if isinstance(value, list):
+            for idx, raw in enumerate(value):
+                normalized = SRSService._normalize_single_activity_diagram(raw, idx)
+                if normalized:
+                    diagrams.append(normalized)
+
+        if diagrams:
+            return diagrams
+
+        if fallback_activity_diagram or fallback_mermaid:
+            return [
+                {
+                    "title": "Main Activity Flow",
+                    "activity_diagram": fallback_activity_diagram,
+                    "activity_diagram_mermaid": fallback_mermaid,
+                }
+            ]
+
+        return []
+
+    @staticmethod
+    def _normalize_single_activity_diagram(raw: Any, idx: int) -> Optional[Dict[str, Any]]:
+        if not isinstance(raw, dict):
+            return None
+
+        title = str(raw.get("title") or f"Activity {idx + 1}").strip()
+
+        lines_raw = raw.get("activity_diagram")
+        if not isinstance(lines_raw, list):
+            lines_raw = []
+        lines = [str(line).strip() for line in lines_raw if str(line or "").strip()]
+
+        mermaid = raw.get("activity_diagram_mermaid")
+        if not isinstance(mermaid, str):
+            mermaid = ""
+        mermaid = mermaid.strip()
+        if not mermaid:
+            mermaid = SRSService._build_mermaid_from_flow_lines(lines)
+
+        if not lines and not mermaid:
+            return None
+
+        return {
+            "title": title,
+            "activity_diagram": lines,
+            "activity_diagram_mermaid": mermaid,
+        }
+
+    @staticmethod
+    def _build_mermaid_from_flow_lines(lines: List[str]) -> str:
+        steps: List[str] = []
+        for raw_line in lines:
+            text = str(raw_line or "").strip()
+            if not text:
+                continue
+            parts = [segment.strip() for segment in text.split("->") if segment.strip()]
+            if not parts:
+                continue
+            for part in parts:
+                if part not in steps:
+                    steps.append(part)
+
+        if len(steps) < 2:
+            return ""
+
+        code_lines = ["flowchart TD"]
+        for idx, label in enumerate(steps):
+            node = f"N{idx}"
+            safe_label = str(label).replace('"', "'")
+            code_lines.append(f"  {node}[\"{safe_label}\"]")
+        for idx in range(len(steps) - 1):
+            code_lines.append(f"  N{idx} --> N{idx + 1}")
+        return "\n".join(code_lines)
 
     @staticmethod
     def _format_dt(value: datetime | None) -> str:

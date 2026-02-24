@@ -50,6 +50,17 @@ class ProjectResponse(BaseModel):
         from_attributes = True
 
 
+class ProjectListResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
 class ProjectStatsResponse(BaseModel):
     project: ProjectResponse
     stats: Dict[str, Any]
@@ -79,7 +90,7 @@ async def create_project(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/", response_model=List[ProjectResponse])
+@router.get("/", response_model=List[ProjectListResponse])
 async def list_projects(
     skip: int = 0,
     limit: int = 100,

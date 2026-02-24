@@ -6,11 +6,10 @@ from __future__ import annotations
 import bcrypt
 import jwt
 from datetime import datetime, timedelta, timezone
-import re
 
 from fastapi import APIRouter, Depends, HTTPException, Header
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
@@ -49,7 +48,10 @@ def _hash_password(password: str) -> str:
 
 
 def _verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except Exception:
+        return False
 
 
 def _create_token(user_id: int, email: str) -> str:
@@ -59,6 +61,10 @@ def _create_token(user_id: int, email: str) -> str:
         "exp": datetime.now(timezone.utc) + timedelta(hours=settings.jwt_expiry_hours),
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+def _normalize_email(email: str) -> str:
+    return str(email or "").strip().lower()
 
 
 def _decode_token(token: str) -> dict:
@@ -97,18 +103,26 @@ async def get_current_user(
 
 @router.post("/register", response_model=AuthResponse)
 async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    normalized_email = _normalize_email(data.email)
+    if not normalized_email:
+        raise HTTPException(status_code=400, detail="Email is required")
+
     try:
-        existing = await db.execute(select(User).where(User.email == data.email))
+        existing = await db.execute(
+            select(User)
+            .where(func.lower(User.email) == normalized_email)
+            .order_by(User.id.desc())
+        )
     except Exception as e:
         if is_database_unavailable_error(e):
             raise db_unavailable_http_exception()
         raise
-    if existing.scalar_one_or_none():
+    if existing.scalars().first() is not None:
         raise HTTPException(status_code=409, detail="Email already registered")
 
     user = User(
         name=data.name,
-        email=data.email,
+        email=normalized_email,
         password_hash=_hash_password(data.password),
     )
     try:
@@ -129,36 +143,24 @@ async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=AuthResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+    normalized_email = _normalize_email(data.email)
+    if not normalized_email or not data.password:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
     try:
-        result = await db.execute(select(User).where(User.email == data.email))
+        result = await db.execute(
+            select(User)
+            .where(func.lower(User.email) == normalized_email)
+            .order_by(User.id.desc())
+        )
     except Exception as e:
         if is_database_unavailable_error(e):
             raise db_unavailable_http_exception()
         raise
-    user = result.scalar_one_or_none()
+    user = result.scalars().first()
 
-    # Development-friendly login: accept any email/password.
-    # If user doesn't exist, create one on first login.
-    if not user:
-        raw_email = (data.email or "").strip()
-        normalized_email = raw_email if raw_email else f"user_{int(datetime.now(timezone.utc).timestamp())}@local"
-        local_part = normalized_email.split("@", 1)[0] if "@" in normalized_email else normalized_email
-        cleaned_name = re.sub(r"[^a-zA-Z0-9 _.-]", " ", local_part).strip()
-        display_name = cleaned_name[:255] if cleaned_name else "User"
-
-        user = User(
-            name=display_name,
-            email=normalized_email,
-            password_hash=_hash_password(data.password or "placeholder"),
-        )
-        try:
-            db.add(user)
-            await db.commit()
-            await db.refresh(user)
-        except Exception as e:
-            if is_database_unavailable_error(e):
-                raise db_unavailable_http_exception()
-            raise
+    if not user or not user.password_hash or not _verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token = _create_token(user.id, user.email)
     return {

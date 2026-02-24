@@ -51,10 +51,6 @@ venv.bak/
 *.sqlite3
 postgres-data/
 
-# Qdrant Data
-qdrant_data/
-qdrant_data_test/
-
 # Uploaded Files
 uploads/*
 !uploads/.gitkeep

@@ -3,10 +3,14 @@ SRS draft routes.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+logger = logging.getLogger(__name__)
 
 from backend.database import get_db
 from backend.database.models import Project, User
@@ -80,6 +84,12 @@ async def refresh_srs(
         draft = await service.generate_draft(db, project_id, payload.language)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.error("SRS generation failed for project %s: %s", project_id, exc)
+        raise HTTPException(
+            status_code=503,
+            detail="SRS generation temporarily unavailable. Please try again or switch the AI provider in settings.",
+        ) from exc
 
     await db.commit()
 

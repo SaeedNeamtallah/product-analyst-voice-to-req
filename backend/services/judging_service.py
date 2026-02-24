@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import select, func
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database.models import SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
+from backend.services.srs_snapshot_cache import SRSSnapshotCache
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +32,20 @@ class JudgingService:
     async def judge_and_refine(
         self,
         srs_content: Dict[str, Any],
+        analysis_content: str = "",
         language: str = "ar",
+        store_refined: bool = False,
+        db: Optional[AsyncSession] = None,
         project_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Judge SRS, refine it, generate summary, and optionally store in DB."""
         logger.info(f"Starting judgment for project {project_id} (lang={language})")
 
-        # --- 1. Critiques ---
-        tech_critique = await self._get_technical_critique(srs_content, language)
-        biz_critique = await self._get_business_critique(srs_content, language)
+        # --- 1. Parallel Critiques ---
+        tech_critique, biz_critique = await asyncio.gather(
+            self._get_technical_critique(srs_content, language),
+            self._get_business_critique(srs_content, language),
+        )
 
         # --- 2. Refine SRS ---
         refined_srs = await self._refine_srs(srs_content, tech_critique, biz_critique, language)
@@ -50,12 +57,39 @@ class JudgingService:
             "technical_critique": tech_critique,
             "business_critique": biz_critique,
             "refined_srs": refined_srs,
+            "refined_analysis": analysis_content,
             "summary": summary,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
+        if store_refined and db is not None and project_id is not None:
+            await self._store_refined_draft(db, project_id, language, refined_srs)
 
         return result
+
+    async def _store_refined_draft(
+        self,
+        db: AsyncSession,
+        project_id: int,
+        language: str,
+        refined_srs: Dict[str, Any],
+    ) -> None:
+        next_version_stmt = select(func.coalesce(func.max(SRSDraft.version), 0) + 1).where(
+            SRSDraft.project_id == project_id
+        )
+        result = await db.execute(next_version_stmt)
+        next_version = result.scalar_one()
+
+        draft = SRSDraft(
+            project_id=project_id,
+            version=next_version,
+            status="refined",
+            language=language,
+            content=refined_srs,
+        )
+        db.add(draft)
+        await db.flush()
+        await SRSSnapshotCache.set_from_draft(draft)
 
     # ------------------- AGENT METHODS -------------------
 
@@ -74,7 +108,7 @@ class JudgingService:
         raw = await self.llm_provider.generate_text(
             prompt=prompt,
             temperature=0.2,
-            max_tokens=4000
+            max_tokens=3000
         )
 
         refined = self._extract_json(raw)   
@@ -104,23 +138,86 @@ class JudgingService:
         srs_json = json.dumps(srs_content, ensure_ascii=False, indent=2)
         if language == "ar":
             return (
-                f"أنت كبير مهندسي البرمجيات (CTO). قيم هذا المستند تقنياً.\n"
-                f"المستند: {srs_json}\n"
-                f"ركز على: المعمارية، الأداء، الأمان، والتدرج.\n"
-                f"أجب بصيغة JSON فقط: {{'strengths': [], 'weaknesses': [], 'risks': [], 'recommendations': []}}"
+                "أنت كبير مهندسي البرمجيات (CTO/Architect) بخبرة في مراجعة وثائق المتطلبات.\n"
+                "مهمتك: إجراء مراجعة تقنية مفصّلة لوثيقة SRS التالية.\n\n"
+                "تعليمات المراجعة:\n"
+                "- عند تحديد أي نقطة ضعف، اذكر عنوان القسم المعني بالضبط كما يظهر في الوثيقة.\n"
+                "- حدد مستوى الخطورة لكل نقطة ضعف: Critical | High | Medium | Low.\n"
+                "- لكل نقطة ضعف، قدّم إجراء إصلاحي محددًا وقابلاً للتنفيذ.\n"
+                "- لا تضف متطلبات جديدة غير موجودة في الوثيقة.\n"
+                "- نقاط القوة يجب أن تشير إلى أقسام بعينها.\n\n"
+                "مجالات التركيز:\n"
+                "المعمارية ونموذج البيانات، الأمان والمصادقة، الأداء وقابلية التوسع، "
+                "نقاط التكامل، قابلية اختبار المتطلبات المحددة، المتطلبات غير الوظيفية المفقودة.\n\n"
+                "أعد JSON صالح فقط بهذا الشكل:\n"
+                '{"strengths": [{"section": "...", "observation": "..."}], '
+                '"weaknesses": [{"section": "...", "risk": "Critical|High|Medium|Low", "issue": "...", "fix": "..."}], '
+                '"risks": [{"description": "...", "mitigation": "..."}], '
+                '"recommendations": ["..."]}\n\n'
+                f"وثيقة SRS:\n{srs_json}"
             )
         return (
-            f"You are a CTO/Senior Architect. Find technical flaws in this SRS.\n"
-            f"SRS: {srs_json}\n"
-            f"Focus on Architecture, Performance, Security, Scalability.\n"
-            f"Return ONLY JSON: {{'strengths': [], 'weaknesses': [], 'risks': [], 'recommendations': []}}"
+            "You are a Senior Software Architect / CTO with deep experience reviewing software requirements documents.\n"
+            "Task: Perform a structured technical review of the SRS below.\n\n"
+            "Review instructions:\n"
+            "- When identifying a weakness, name the EXACT section title from the document.\n"
+            "- Assign a risk level to each weakness: Critical | High | Medium | Low.\n"
+            "- For each weakness, provide a specific, actionable remediation step.\n"
+            "- Do NOT add new requirements that are absent from the document.\n"
+            "- Strengths must reference specific section titles.\n\n"
+            "Focus areas:\n"
+            "Architecture & data model, Security & authentication, Performance & scalability, "
+            "Integration points, Testability of stated requirements, Missing non-functional requirements.\n\n"
+            "Return ONLY valid JSON:\n"
+            '{"strengths": [{"section": "...", "observation": "..."}], '
+            '"weaknesses": [{"section": "...", "risk": "Critical|High|Medium|Low", "issue": "...", "fix": "..."}], '
+            '"risks": [{"description": "...", "mitigation": "..."}], '
+            '"recommendations": ["..."]}\n\n'
+            f"SRS document:\n{srs_json}"
         )
 
     def _build_business_critique_prompt(self, srs_content, language):
         srs_json = json.dumps(srs_content, ensure_ascii=False, indent=2)
         if language == "ar":
-            return f"أنت محلل أعمال. قيم المستند تجارياً وأخرج JSON فقط مع نقاط القوة والضعف والتوصيات.\nSRS: {srs_json}"
-        return f"You are a Business Analyst. Evaluate this document and return JSON only with strengths, weaknesses, and recommendations."
+            return (
+                "أنت محلل أعمال ومدير منتج بخبرة في تقييم وثائق المتطلبات.\n"
+                "مهمتك: تقييم وثيقة SRS من منظور الأعمال وتوافقها مع احتياجات العميل.\n\n"
+                "تعليمات التقييم:\n"
+                "- اذكر عنوان القسم المعني بالضبط عند الإشارة لأي مشكلة.\n"
+                "- اكشف المتطلبات الغامضة غير القابلة للقياس (مثل: سريع، جيد، عادي، مرن) وقترح بديلاً قابلاً للقياس.\n"
+                "- حدد وجهات نظر المستخدمين أو السيناريوهات المفقودة.\n"
+                "- قيّم وضوح قيمة الأعمال وأهداف النجاح.\n\n"
+                "مجالات التركيز:\n"
+                "وضوح قيمة الأعمال، مقاييس النجاح القابلة للقياس، اكتمال رحلات المستخدم، "
+                "المتطلبات الغامضة، وضوح النطاق، توافق الأولويات.\n\n"
+                "أعد JSON صالح فقط بهذا الشكل:\n"
+                '{"strengths": [{"section": "...", "observation": "..."}], '
+                '"weaknesses": [{"section": "...", "issue": "...", "suggested_fix": "..."}], '
+                '"vague_requirements": [{"original": "...", "suggested_replacement": "..."}], '
+                '"missing_perspectives": ["..."], '
+                '"recommendations": ["..."]}\n\n'
+                f"وثيقة SRS:\n{srs_json}"
+            )
+        return (
+            "You are a Product Manager / Business Analyst with experience evaluating requirements documents.\n"
+            "Task: Evaluate the SRS below for business viability and client alignment.\n\n"
+            "Review instructions:\n"
+            "- Reference EXACT section titles from the document when identifying issues.\n"
+            "- Detect vague, unmeasurable requirements (e.g. fast, good, normal, scalable, flexible) "
+            "  and suggest concrete, measurable replacements.\n"
+            "- Identify missing stakeholder perspectives or user scenarios.\n"
+            "- Assess clarity of business value and success criteria.\n\n"
+            "Focus areas:\n"
+            "Business value clarity, Measurable success metrics, User journey completeness, "
+            "Vague/unmeasurable requirements, Scope clarity, Priority alignment.\n\n"
+            "Return ONLY valid JSON:\n"
+            '{"strengths": [{"section": "...", "observation": "..."}], '
+            '"weaknesses": [{"section": "...", "issue": "...", "suggested_fix": "..."}], '
+            '"vague_requirements": [{"original": "...", "suggested_replacement": "..."}], '
+            '"missing_perspectives": ["..."], '
+            '"recommendations": ["..."]}\n\n'
+            f"SRS document:\n{srs_json}"
+        )
 
     def _build_srs_refinement_prompt(self, srs_content, tech, biz, language):
         srs_json = json.dumps(srs_content, ensure_ascii=False, indent=2)
@@ -129,48 +226,71 @@ class JudgingService:
 
         if language == "ar":
             return (
-                "أنت محلل أعمال وخبير تقني محترف.\n"
-                "قم بتحسين مستند SRS التالي بناءً على التقييمات.\n\n"
-                "قواعد صارمة جداً:\n"
-                "1) لا تغيّر هيكل JSON إطلاقاً.\n"
-                "2) احتفظ بنفس المفاتيح تماماً:\n"
-                "   summary, metrics, sections, questions, next_steps\n"
-                "3) metrics يجب أن تكون قائمة من عناصر {label, value}.\n"
-                "4) sections يجب أن تكون قائمة من {title, confidence, items}.\n"
-                "5) questions و next_steps يجب أن يكونوا قوائم نصوص.\n"
-                "6) لا تضف أي مفاتيح جديدة.\n"
-                "7) لا تشرح أي شيء خارج JSON.\n\n"
-                f"التقييم التقني:\n{tech_json}\n\n"
-                f"التقييم التجاري:\n{biz_json}\n\n"
+                "أنت مهندس متطلبات أول ومهندس برمجيات متمرس.\n"
+                "مهمتك: إنتاج نسخة محسّنة من وثيقة SRS بناءً على نتائج التقييمات التقنية والتجارية.\n\n"
+                "قواعد التحسين الصارمة:\n"
+                "1) طبّق الإصلاحات المحددة من كلا التقييمين.\n"
+                "2) استبدل جميع العبارات الغامضة (سريع، جيد، عادي، قياسي، مرن) بقيم قابلة للقياس "
+                "   مستمدة من سياق الوثيقة. إذا لم تتوفر قيمة قابلة للقياس، أضف سؤالاً للعميل في قسم questions "
+                "   بدلاً من اختراع رقم.\n"
+                "3) أعد صياغة المتطلبات بصيغة 'يجب أن يوفر النظام...' إذا لم تكن بهذه الصيغة.\n"
+                "4) لا تحذف أي متطلب موجود — فقط حسّنه أو أعد صياغته.\n"
+                "5) احتفظ بهيكل الـ 7 أقسام بالضبط.\n"
+                "6) كل نقطة ضعف محددة في التقييمين يجب معالجتها في المخرجات.\n"
+                "7) أعد JSON صالح فقط — بدون markdown أو شرح.\n\n"
                 f"المستند الأصلي:\n{srs_json}\n\n"
-                "أعد نفس الـ JSON بعد تحسين القيم فقط."
+                f"نتائج التقييم التقني:\n{tech_json}\n\n"
+                f"نتائج التقييم التجاري:\n{biz_json}\n\n"
+                "أعد نفس هيكل JSON مع تحسين القيم. المفاتيح الإلزامية: "
+                "summary, metrics, sections, questions, next_steps"
             )
 
         return (
-            "You are a senior technical & business analyst.\n"
-            "Refine the following SRS using the critiques.\n\n"
-            "STRICT RULES:\n"
-            "1) DO NOT change JSON structure.\n"
-            "2) Keep EXACT keys:\n"
-            "   summary, metrics, sections, questions, next_steps\n"
-            "3) metrics = list of {label, value}\n"
-            "4) sections = list of {title, confidence, items}\n"
-            "5) questions & next_steps = string arrays\n"
-            "6) DO NOT add new keys\n"
-            "7) Return JSON only — no explanations\n\n"
-            f"Technical critique:\n{tech_json}\n\n"
-            f"Business critique:\n{biz_json}\n\n"
+            "You are a senior requirements engineer and software architect.\n"
+            "Task: Produce an improved version of the SRS by applying all critique findings.\n\n"
+            "STRICT REFINEMENT RULES:\n"
+            "1) Apply concrete fixes from BOTH technical and business critiques.\n"
+            "2) Replace ALL vague terms (fast, good, normal, scalable, flexible, standard) with measurable "
+            "   values drawn from project context. If no measurable value is available, add a client-facing "
+            "   question to 'questions' instead of inventing a number.\n"
+            "3) Rewrite requirements in 'The system SHALL...' format if not already.\n"
+            "4) Do NOT remove any existing requirement — only improve or rephrase.\n"
+            "5) Maintain the exact 7-section structure.\n"
+            "6) Every weakness cited in the critiques MUST be addressed in the output.\n"
+            "7) Return ONLY valid JSON — no markdown, no prose.\n\n"
             f"Original SRS:\n{srs_json}\n\n"
-            "Return the SAME JSON structure with improved values only."
+            f"Technical critique findings:\n{tech_json}\n\n"
+            f"Business critique findings:\n{biz_json}\n\n"
+            "Return the same JSON structure with improved values. Required keys: "
+            "summary, metrics, sections, questions, next_steps"
         )
 
 
     def _build_summary_prompt(self, tech, biz, language):
+        tech_json = json.dumps(tech, ensure_ascii=False)
+        biz_json = json.dumps(biz, ensure_ascii=False)
+        if language == "ar":
+            return (
+                "ولّد ملخصًا تنفيذيًا من نتائج التقييمات التالية.\n"
+                f"التقييم التقني: {tech_json}\n"
+                f"التقييم التجاري: {biz_json}\n"
+                "أعد JSON صالح فقط بالمفاتيح التالية:\n"
+                '{"overall_quality": "ممتاز|جيد|مقبول|ضعيف", '
+                '"key_strengths": ["..."], '
+                '"key_risks": ["..."], '
+                '"priority_improvements": ["..."], '
+                '"readiness_level": "جاهز للتطوير|يحتاج مراجعة|يحتاج إعادة عمل"}'
+            )
         return (
-            f"Generate executive summary from critiques.\n"
-            f"Technical: {json.dumps(tech)}\n"
-            f"Business: {json.dumps(biz)}\n"
-            f"Return JSON keys: overall_quality, key_strengths, key_risks, priority_improvements, readiness_level. Language: {language}"
+            "Generate an executive summary from the following critique findings.\n"
+            f"Technical critique: {tech_json}\n"
+            f"Business critique: {biz_json}\n"
+            "Return ONLY valid JSON with these keys:\n"
+            '{"overall_quality": "Excellent|Good|Acceptable|Poor", '
+            '"key_strengths": ["..."], '
+            '"key_risks": ["..."], '
+            '"priority_improvements": ["..."], '
+            '"readiness_level": "Ready for Development|Needs Review|Needs Rework"}'
         )
 
 

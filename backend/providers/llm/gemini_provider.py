@@ -43,7 +43,7 @@ class GeminiProvider(LLMInterface):
         genai.configure(api_key=self.api_key)
         # Initialize models
         self.chat_model = genai.GenerativeModel(self.model_name)
-        self.embedding_model = settings.gemini_embed_model
+        self.embedding_model = getattr(settings, "gemini_embed_model", "models/gemini-embedding-001")
         logger.info(f"Gemini provider initialized with model: {self.model_name}")
     
     async def generate_text(

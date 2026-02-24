@@ -16,6 +16,8 @@ class BotSettings(BaseSettings):
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_admin_id: str = Field(default="", alias="TELEGRAM_ADMIN_ID")
     api_base_url: str = Field(default="http://localhost:8500", alias="API_BASE_URL")
+    bot_api_email: str = Field(default="admin@tawasul.com", alias="BOT_API_EMAIL")
+    bot_api_password: str = Field(default="admin123", alias="BOT_API_PASSWORD")
     
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE),

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.database.models import Project, User
 from backend.routes.auth import get_current_user
+from backend.services.interview_draft_store import InterviewDraftStore
 from backend.services.interview_service import InterviewService
 from backend.services.telemetry_service import TelemetryService
 
@@ -29,8 +30,60 @@ def get_interview_service() -> InterviewService:
 
 class InterviewRequest(BaseModel):
     language: str = Field(default="ar", pattern="^(ar|en)$")
-    last_summary: Optional[Dict[str, List[str]]] = None
-    last_coverage: Optional[Dict[str, float]] = None
+    last_summary: Optional[Dict[str, Any]] = None
+    last_coverage: Optional[Dict[str, Any]] = None
+
+
+def _normalize_last_summary(value: Optional[Dict[str, Any]]) -> Optional[Dict[str, List[str]]]:
+    if not isinstance(value, dict):
+        return None
+
+    normalized: Dict[str, List[str]] = {}
+    for key, raw_items in value.items():
+        area = str(key).strip()
+        if not area:
+            continue
+        if not isinstance(raw_items, list):
+            continue
+        items = [str(item).strip() for item in raw_items if str(item).strip()]
+        if items:
+            normalized[area] = items
+
+    return normalized or None
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        cleaned = value.strip().replace("%", "")
+        if not cleaned:
+            return None
+        try:
+            return float(cleaned)
+        except ValueError:
+            return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_last_coverage(value: Optional[Dict[str, Any]]) -> Optional[Dict[str, float]]:
+    if not isinstance(value, dict):
+        return None
+
+    normalized: Dict[str, float] = {}
+    for key, raw_value in value.items():
+        area = str(key).strip()
+        if not area:
+            continue
+        parsed = _to_float(raw_value)
+        if parsed is None:
+            continue
+        normalized[area] = max(0.0, min(parsed, 100.0))
+
+    return normalized or None
 
 
 class InterviewResponse(BaseModel):
@@ -47,8 +100,8 @@ class InterviewResponse(BaseModel):
 
 
 class InterviewDraftPayload(BaseModel):
-    summary: Optional[Dict[str, List[str]]] = None
-    coverage: Optional[Dict[str, float]] = None
+    summary: Optional[Dict[str, Any]] = None
+    coverage: Optional[Dict[str, Any]] = None
     signals: Optional[Dict[str, Any]] = None
     livePatch: Optional[Dict[str, Any]] = None
     cycleTrace: Optional[Dict[str, Any]] = None
@@ -57,7 +110,12 @@ class InterviewDraftPayload(BaseModel):
     mode: bool = False
     lastAssistantQuestion: str = ""
     savedAt: Optional[str] = None
-    lang: str = Field(default="ar", pattern="^(ar|en)$")
+    lang: str = "ar"
+
+    def __init__(self, **data: Any) -> None:  # noqa: ANN401
+        if "lang" in data and data["lang"] not in ("ar", "en"):
+            data["lang"] = "ar"
+        super().__init__(**data)
 
 
 def _get_project_interview_draft(project: Project) -> Optional[Dict[str, Any]]:
@@ -85,10 +143,12 @@ async def next_question(
 ):
     await _get_user_project(db, project_id, user)
     service = get_interview_service()
+    normalized_summary = _normalize_last_summary(payload.last_summary)
+    normalized_coverage = _normalize_last_coverage(payload.last_coverage)
     result = await service.get_next_question(
         db, project_id, payload.language,
-        last_summary=payload.last_summary,
-        last_coverage=payload.last_coverage,
+        last_summary=normalized_summary,
+        last_coverage=normalized_coverage,
     )
     await TelemetryService.record_interview_turn(db=db, project_id=project_id, result=result)
     await db.commit()
@@ -113,6 +173,9 @@ async def get_interview_draft(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(db, project_id, user)
+    redis_draft = await InterviewDraftStore.get(project_id)
+    if isinstance(redis_draft, dict):
+        return {"draft": redis_draft}
     return {"draft": _get_project_interview_draft(project)}
 
 
@@ -124,11 +187,17 @@ async def save_interview_draft(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(db, project_id, user)
+    draft_data = payload.model_dump()
+    draft_data["summary"] = _normalize_last_summary(payload.summary)
+    draft_data["coverage"] = _normalize_last_coverage(payload.coverage)
+
+    await InterviewDraftStore.set(project_id, draft_data)
+
     metadata = dict(project.extra_metadata or {})
-    metadata["interview_draft"] = payload.model_dump()
+    metadata["interview_draft"] = draft_data
     project.extra_metadata = metadata
     await db.commit()
-    return {"success": True, "draft": metadata["interview_draft"]}
+    return {"success": True, "draft": draft_data}
 
 
 @router.delete("/projects/{project_id}/interview/draft")
@@ -138,6 +207,7 @@ async def clear_interview_draft(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(db, project_id, user)
+    await InterviewDraftStore.delete(project_id)
     metadata = dict(project.extra_metadata or {})
     metadata.pop("interview_draft", None)
     project.extra_metadata = metadata

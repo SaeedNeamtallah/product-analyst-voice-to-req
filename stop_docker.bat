@@ -1,8 +1,8 @@
 @echo off
-REM RAGMind Docker Services Stop Script
+REM Tawasul Docker Services Stop Script
 
 echo ========================================
-echo    RAGMind - Stop Docker Services
+echo    Tawasul - Stop Docker Services
 echo ========================================
 echo.
 

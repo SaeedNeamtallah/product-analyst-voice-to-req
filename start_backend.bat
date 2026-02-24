@@ -1,9 +1,9 @@
 @echo off
 setlocal
-REM RAGMind Backend Startup Script (delegates to PowerShell)
+REM Tawasul Backend Startup Script (delegates to PowerShell)
 
 echo ========================================
-echo    RAGMind Backend Server
+echo    Tawasul Backend Server
 echo ========================================
 echo.
 
@@ -24,6 +24,7 @@ if errorlevel 1 (
 )
 
 echo [INFO] Launching PowerShell startup flow...
+echo [INFO] Frontend mode: legacy frontend/ only
 powershell -ExecutionPolicy Bypass -File "%PS_SCRIPT%"
 set "EXIT_CODE=%ERRORLEVEL%"
 

@@ -20,18 +20,25 @@ async def get_global_stats(
 ):
     """Get statistics scoped to the current user's projects."""
     try:
-        row = (await db.execute(
-            select(
-                select(func.count(Project.id)).where(Project.user_id == user.id).scalar_subquery().label('p'),
-                select(func.count(Asset.id)).where(Asset.project_id.in_(select(Project.id).where(Project.user_id == user.id))).scalar_subquery().label('d'),
-                select(func.count(Asset.id)).where(
-                    Asset.project_id.in_(select(Project.id).where(Project.user_id == user.id)),
-                    Asset.extracted_text.isnot(None),
-                    Asset.extracted_text != ""
-                ).scalar_subquery().label('t'),
+        user_projects = select(Project.id).where(Project.user_id == user.id)
+
+        project_count = (await db.execute(
+            select(func.count()).select_from(Project).where(Project.user_id == user.id)
+        )).scalar() or 0
+
+        doc_count = (await db.execute(
+            select(func.count()).select_from(Asset).where(Asset.project_id.in_(user_projects))
+        )).scalar() or 0
+
+        transcript_count = (await db.execute(
+            select(func.count()).select_from(Asset).where(
+                Asset.project_id.in_(user_projects),
+                Asset.extracted_text.isnot(None),
+                Asset.extracted_text != ""
             )
-        )).one()
-        return {"projects": row.p or 0, "documents": row.d or 0, "transcripts": row.t or 0}
+        )).scalar() or 0
+
+        return {"projects": project_count, "documents": doc_count, "transcripts": transcript_count}
     except Exception as e:
         if is_database_unavailable_error(e):
             raise db_unavailable_http_exception()

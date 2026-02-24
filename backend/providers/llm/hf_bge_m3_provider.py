@@ -16,7 +16,7 @@ class BgeM3Provider(LLMInterface):
     """Local BGE-M3 provider implementation (embeddings only)."""
 
     def __init__(self, model_name: str = None, device: str = None):
-        self.model_name = model_name or settings.hf_embedding_model
+        self.model_name = model_name or getattr(settings, "hf_embedding_model", "BAAI/bge-m3")
         self.device = device
 
         try:

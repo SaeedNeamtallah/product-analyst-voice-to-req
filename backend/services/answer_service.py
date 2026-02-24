@@ -4,10 +4,43 @@ Handles generating AI-powered answers using LLM.
 """
 from typing import List, Dict, Any, Optional, AsyncIterator
 from backend.providers.llm.factory import LLMProviderFactory
+from backend.services.resilience_service import run_with_failover, circuit_breakers
+from backend.runtime_config import get_runtime_value
+from backend.config import settings
 import json
 import logging
 
 logger = logging.getLogger(__name__)
+
+_ANSWER_SYSTEM_PROMPT = """\
+أنت مهندس برمجيات استشاري (Consulting Software Engineer).
+مهمتك هي الإجابة على أسئلة العميل حول تفاصيل مشروعه الحالي بوضوح واحترافية.
+
+## الذاكرة الحالية للمشروع (SRS Snapshot):
+{srs_snapshot}
+
+## قواعد الإجابة الصارمة (Zero Hallucination Policy):
+1. التقيد التام بالذاكرة: إجاباتك يجب أن تُستمد حصرياً من (SRS Snapshot) المرفق أعلاه.
+2. منع التأليف: يُمنع منعاً باتاً اختراع، افتراض، أو اقتراح ميزات أو أرقام أو قيود غير موجودة صراحة في الذاكرة الحالية.
+3. التعامل مع المجهول: إذا سأل العميل عن تفصيلة غير موجودة في الـ Snapshot، يجب أن تجيبه بوضوح: "هذا المتطلب لم نقم بتحديده أو مناقشته حتى الآن ضمن نطاق المشروع. هل تود أن نضيفه الآن؟".
+4. الإيجاز والمهنية: كن مباشراً في إجابتك، واستخدم أسلوباً احترافياً يعكس خبرتك الهندسية.
+5. لغة العميل: أجب بنفس اللغة التي استخدمها العميل في سؤاله.
+"""
+
+_ANSWER_SYSTEM_PROMPT_EN = """\
+You are a consulting software engineer.
+Your task is to answer the client's questions about the current project clearly and professionally.
+
+## Current project memory (SRS Snapshot):
+{srs_snapshot}
+
+## Strict answer rules (Zero Hallucination Policy):
+1. Memory-only answers: your response must be derived exclusively from the SRS Snapshot above.
+2. No fabrication: do not invent assumptions, features, numbers, or constraints that are not explicitly in memory.
+3. Unknown handling: if the user asks about a detail not found in memory, respond clearly with: "This requirement has not been defined or discussed yet within the current project scope. Would you like us to add it now?"
+4. Concise professionalism: keep answers direct and technically professional.
+5. User language: answer in the same language as the user question.
+"""
 
 
 class AnswerService:
@@ -17,6 +50,134 @@ class AnswerService:
         """Initialize answer service."""
         self.llm_provider = LLMProviderFactory.create_provider()
         logger.info("Answer service initialized")
+
+    @staticmethod
+    def _candidate_llm_providers() -> List[str]:
+        preferred = [
+            "openrouter-gemini-2.0-flash",
+            "groq-llama-3.3-70b-versatile",
+            "cerebras-llama-3.3-70b",
+            "cerebras-llama-3.1-8b",
+            "openrouter-free",
+            "gemini",
+            "gemini-2.5-flash",
+            "gemini-2.5-lite-flash",
+        ]
+        available = set(LLMProviderFactory.get_available_providers())
+        if not available:
+            return []
+
+        selected = str(get_runtime_value("llm_provider", settings.llm_provider) or "").strip().lower()
+        ordered: List[str] = []
+
+        if selected in available:
+            ordered.append(selected)
+
+        for name in preferred:
+            if name in available and name not in ordered:
+                ordered.append(name)
+
+        for name in sorted(available):
+            if name not in ordered:
+                ordered.append(name)
+
+        return ordered
+
+    async def _generate_text_resilient(
+        self,
+        *,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        providers = self._candidate_llm_providers()
+        if not providers:
+            return await self.llm_provider.generate_text(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+
+        provider_calls = []
+        for provider_name in providers:
+            provider_calls.append((
+                provider_name,
+                lambda pn=provider_name: self._provider_generate_text(
+                    provider_name=pn,
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ),
+            ))
+
+        result, _ = await run_with_failover(
+            provider_calls,
+            breaker_prefix="answer_text",
+            failure_threshold=2,
+            cooldown_seconds=45,
+        )
+        return str(result)
+
+    @staticmethod
+    async def _provider_generate_text(
+        *,
+        provider_name: str,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        provider = LLMProviderFactory.create_provider(provider_name)
+        return await provider.generate_text(
+            prompt=prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+
+    async def _generate_stream_resilient(
+        self,
+        *,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> AsyncIterator[str]:
+        providers = self._candidate_llm_providers()
+        if not providers:
+            async for token in self.llm_provider.generate_text_stream(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            ):
+                yield token
+            return
+
+        last_error: Exception | None = None
+        for provider_name in providers:
+            key = f"answer_stream:{provider_name}"
+            if await circuit_breakers.is_open(key):
+                continue
+
+            provider = LLMProviderFactory.create_provider(provider_name)
+            started = False
+            try:
+                async for token in provider.generate_text_stream(
+                    prompt=prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ):
+                    started = True
+                    yield token
+                await circuit_breakers.record_success(key)
+                return
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                await circuit_breakers.record_failure(key, threshold=2, cooldown_seconds=45)
+                if started:
+                    raise
+                continue
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("No available providers for answer streaming")
     
     async def generate_answer(
         self,
@@ -40,16 +201,16 @@ class AnswerService:
         """
         try:
             # Build context from transcript blocks
-            context = self._build_context(context_chunks)
-            
+            context = self._build_context(context_chunks, language)
+
             # Build prompt
             prompt = self._build_prompt(query, context, language, project_context)
             
             # Generate answer
-            answer = await self.llm_provider.generate_text(
+            answer = await self._generate_text_resilient(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=25000
+                max_tokens=2000,
             )
             
             # Format response
@@ -81,13 +242,13 @@ class AnswerService:
         Yields raw text tokens as they arrive from the provider.
         """
         try:
-            context = self._build_context(context_chunks)
+            context = self._build_context(context_chunks, language)
             prompt = self._build_prompt(query, context, language, project_context)
 
-            async for token in self.llm_provider.generate_text_stream(
+            async for token in self._generate_stream_resilient(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=25000,
+                max_tokens=2000,
             ):
                 yield token
 
@@ -95,13 +256,14 @@ class AnswerService:
             logger.error(f"Error streaming answer: {str(e)}")
             raise
     
-    def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
+    def _build_context(self, chunks: List[Dict[str, Any]], language: str = "ar") -> str:
         """
         Build context string from transcript blocks.
-        
+
         Args:
             chunks: List of context dictionaries
-            
+            language: 'ar' or 'en' — controls source label language
+
         Returns:
             Formatted context string
         """
@@ -113,7 +275,8 @@ class AnswerService:
             content = chunk.get('content', '')
 
             source_index = len(context_parts) + 1
-            context_parts.append(f"[مصدر {source_index} - {doc_name}]\n{content}")
+            label = f"مصدر {source_index}" if language == "ar" else f"Source {source_index}"
+            context_parts.append(f"[{label} - {doc_name}]\n{content}")
         
         return "\n\n".join(context_parts)
     
@@ -238,10 +401,10 @@ Answer:"""
         """Generate answer using LLM general knowledge when no documents exist."""
         try:
             prompt = self._build_no_context_prompt(query, language, project_context)
-            answer = await self.llm_provider.generate_text(
+            answer = await self._generate_text_resilient(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=25000,
+                max_tokens=2000,
             )
             return {
                 'answer': answer.strip(),
@@ -261,10 +424,10 @@ Answer:"""
         """Stream answer tokens using LLM general knowledge when no documents exist."""
         try:
             prompt = self._build_no_context_prompt(query, language, project_context)
-            async for token in self.llm_provider.generate_text_stream(
+            async for token in self._generate_stream_resilient(
                 prompt=prompt,
                 temperature=0.7,
-                max_tokens=25000,
+                max_tokens=2000,
             ):
                 yield token
         except Exception as e:
@@ -277,39 +440,26 @@ Answer:"""
         language: str,
         project_context: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """Build prompt for LLM-only mode (no document context available)."""
-        project_profile = AnswerService._build_project_profile(project_context)
-        response_style = AnswerService._response_style_from_query(query=query, language=language)
+        """Build strict memory-only prompt for no-RAG answer mode."""
+        snapshot = "{}"
+        if isinstance(project_context, dict):
+            srs = project_context.get("srs")
+            if isinstance(srs, dict):
+                content = srs.get("content")
+                if isinstance(content, dict) and content:
+                    snapshot = json.dumps(content, ensure_ascii=False)
+
         if language == "ar":
-            return f"""أنت مساعد مؤسسي للمشاريع البرمجية. لا توجد مستندات مرفوعة حاليًا، لذا اعتمد على المعرفة العامة + بروفايل المشروع فقط.
-القواعد:
-1) كن عمليًا ومباشرًا وقدم إجابة تخدم المشروع.
-2) لا تدّع وجود مصادر أو استشهادات.
-3) إذا كانت المعلومة غير مؤكدة، اذكر ذلك مع افتراض واضح.
-4) اختم بخطوة تنفيذية تالية واحدة على الأقل.
-
-بروفايل المشروع:
-{project_profile}
-
-أسلوب الإجابة المطلوب:
-{response_style}
+            base = _ANSWER_SYSTEM_PROMPT.format(srs_snapshot=snapshot)
+            return f"""{base}
 
 السؤال:
 {query}
 
 الإجابة:"""
-        return f"""You are an enterprise project assistant. No documents are currently available, so answer using general knowledge + project profile only.
-Rules:
-1) Be practical and project-serving.
-2) Do not claim sources or citations.
-3) If uncertain, state assumptions clearly.
-4) End with at least one actionable next step.
 
-Project profile:
-{project_profile}
-
-Preferred response style:
-{response_style}
+        base = _ANSWER_SYSTEM_PROMPT_EN.format(srs_snapshot=snapshot)
+        return f"""{base}
 
 Question:
 {query}

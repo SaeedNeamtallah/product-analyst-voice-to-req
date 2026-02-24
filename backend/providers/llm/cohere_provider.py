@@ -17,8 +17,8 @@ class CohereProvider(LLMInterface):
     """Cohere provider implementation (embeddings only)."""
 
     def __init__(self, api_key: str = None, embed_model: str = None):
-        self.api_key = api_key or settings.cohere_api_key
-        self.embed_model = embed_model or settings.cohere_embed_model
+        self.api_key = api_key or getattr(settings, "cohere_api_key", "")
+        self.embed_model = embed_model or getattr(settings, "cohere_embed_model", "embed-multilingual-v3.0")
         self.client = cohere.Client(self.api_key)
         logger.info(f"Cohere provider initialized with embedding model: {self.embed_model}")
 
@@ -43,10 +43,10 @@ class CohereProvider(LLMInterface):
 
             batch_size = kwargs.get("batch_size")
             max_batch_tokens = kwargs.get("max_batch_tokens")
-            max_retries = kwargs.get("max_retries", settings.cohere_max_retries)
-            base_delay = kwargs.get("base_delay", settings.cohere_base_retry_delay)
+            max_retries = kwargs.get("max_retries", getattr(settings, "cohere_max_retries", 3))
+            base_delay = kwargs.get("base_delay", getattr(settings, "cohere_base_retry_delay", 2.0))
 
-            token_cap = settings.cohere_max_batch_tokens
+            token_cap = getattr(settings, "cohere_max_batch_tokens", 50000)
             if max_batch_tokens is not None:
                 token_cap = min(token_cap, int(max_batch_tokens))
 

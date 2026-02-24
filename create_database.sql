@@ -1,8 +1,8 @@
--- RAGMind Database Creation Script
+-- Tawasul Database Creation Script
 -- Run this in PostgreSQL before starting the application
 
 -- Create database
-CREATE DATABASE ragmind;
+CREATE DATABASE tawasul;
 
--- Connect to the ragmind database (in psql: \c ragmind)
-\c ragmind
+-- Connect to the tawasul database (in psql: \c tawasul)
+\c tawasul

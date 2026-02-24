@@ -1,18 +1,19 @@
 /**
- * RAGMind Web Frontend
+ * Tawasul Web Frontend
  * Main Application Logic
  */
 
 // Configuration
-const API_BASE_URL = 'http://localhost:8500';
+const API_BASE_URL = `${globalThis.location.protocol}//${globalThis.location.hostname}:8500`;
 
 const inMemoryStorage = {};
 
 function safeStorageGet(key, fallback = null) {
     try {
-        const value = window.localStorage.getItem(key);
+        const value = globalThis.localStorage.getItem(key);
         return value === null ? fallback : value;
     } catch (error) {
+        console.warn('localStorage get failed, using in-memory fallback.', error);
         const value = inMemoryStorage[key];
         return value === undefined ? fallback : value;
     }
@@ -21,16 +22,18 @@ function safeStorageGet(key, fallback = null) {
 function safeStorageSet(key, value) {
     inMemoryStorage[key] = String(value);
     try {
-        window.localStorage.setItem(key, value);
+        globalThis.localStorage.setItem(key, value);
     } catch (error) {
+        console.warn('localStorage set failed, kept in-memory value.', error);
     }
 }
 
 function safeStorageRemove(key) {
     delete inMemoryStorage[key];
     try {
-        window.localStorage.removeItem(key);
+        globalThis.localStorage.removeItem(key);
     } catch (error) {
+        console.warn('localStorage remove failed, removed in-memory value only.', error);
     }
 }
 
@@ -39,18 +42,25 @@ const i18n = {
     ar: {
         nav_dashboard: "لوحة التحكم",
         nav_projects: "المشاريع",
-        nav_chat: "المحادثة الذكية",
+        nav_chat: "مقابلة الذكاء الاصطناعي",
+        nav_templates: "النماذج",
         interview_mode: "وضع المقابلة",
-        nav_srs: "مراجعة المتطلبات",
-        nav_bot: "إعدادات البوت",
-        nav_ai_config: "إعدادات الذكاء الاصطناعي",
+        nav_srs: "مستندات SRS",
+        nav_settings: "الإعدادات",
+        nav_ai_config: "نموذج الذكاء",
+        ai_config_title: "نموذج الذكاء الاصطناعي",
+        settings_title: "الإعدادات",
+        settings_tab_ai: "نموذج الذكاء الاصطناعي",
+        settings_tab_bot: "بوت تليجرام",
+        project_files_btn: "ملفات المشروع",
         stat_projects: "إجمالي المشاريع",
         stat_docs: "المستندات",
         stat_chunks: "القطع النصية",
         recent_projects: "المشاريع الأخيرة",
         view_all: "عرض الكل",
         your_projects: "مشاريعك",
-        welcome_title: "مرحباً بك في RAGMind",
+        project_goal_hint: "أضف هدفًا مختصرًا لمساعدة الذكاء الاصطناعي على توليد SRS أفضل.",
+        welcome_title: "مرحباً بك في Tawasul",
         project_name_ph: "مثلاً: أبحاث الذكاء الاصطناعي",
         project_desc_ph: "وصف مختصر للمشروع...",
         create_project_btn: "إنشاء المشروع",
@@ -69,33 +79,13 @@ const i18n = {
         bot_name: "اسم البوت",
         update_profile: "تحديث الملف الشخصي",
         processing_label: "جار المعالجة",
-        stage_chunking: "تجزئة النص",
-        stage_embedding: "تضمين النص",
-        stage_indexing: "فهرسة المتجهات",
         ai_settings_title: "إعدادات النماذج",
-        ai_settings_desc: "اختر مزود التوليد ومزود التضمين.",
-        retrieval_top_k_label: "عدد المقاطع المسترجعة",
-        retrieval_top_k_desc: "عدد المقاطع المستخدمة للإجابة.",
-        chunk_strategy_label: "استراتيجية التجزئة",
-        chunk_strategy_parent: "أب/ابن (من الصغير للكبير)",
-        chunk_strategy_simple: "بسيطة",
-        chunk_size_label: "حجم المقطع",
-        chunk_overlap_label: "تداخل المقاطع",
-        parent_chunk_size_label: "حجم المقطع الأب",
-        parent_chunk_overlap_label: "تداخل المقطع الأب",
-        retrieval_candidate_k_label: "عدد المرشحين الأولي",
-        hybrid_enabled_label: "البحث الهجين",
-        hybrid_alpha_label: "وزن الدلالي",
-        rewrite_enabled_label: "إعادة صياغة الاستعلام",
-        rerank_enabled_label: "إعادة الترتيب",
-        rerank_top_k_label: "عدد إعادة الترتيب",
+        ai_settings_desc: "اختر مزود التوليد.",
         gen_provider_label: "مزود التوليد",
-        embed_provider_label: "مزود التضمين",
         select_project_ph: "اختر مشروعاً...",
         delete_confirm: "هل أنت متأكد؟",
         success_saved: "تم الحفظ بنجاح",
         error_generic: "حدث خطأ ما",
-        vector_db_label: "قاعدة المتجهات",
         embedding_size_label: "أبعاد التضمين",
         config_group_providers: "المزودون",
         config_group_chunking: "التجزئة",
@@ -111,6 +101,9 @@ const i18n = {
         srs_subtitle: "نسخة أولية من المتطلبات مع نقاط تحتاج توضيح.",
         srs_refresh: "تحديث المسودة",
         srs_export: "تصدير SRS",
+        srs_export_pdf: "تصدير PDF",
+        srs_export_word: "تصدير Word",
+        srs_export_markdown: "تصدير Markdown",
         srs_summary_title: "ملخص سريع",
         srs_open_questions: "نقاط تحتاج توضيح",
         srs_next_steps: "الخطوات القادمة",
@@ -163,23 +156,38 @@ const i18n = {
         interview_saved: "تم حفظ المقابلة. يمكنك المتابعة لاحقًا من نفس المشروع.",
         interview_completed: "اكتملت المقابلة! راجع الإجابات النهائية قبل الإرسال.",
         interview_duplicate_guard: "يبدو أن الإجابة مكررة. أضف تفصيلة جديدة أو استخدم تخطّي.",
-        interview_progress: "تم الإنجاز: {percent}%"
+        interview_progress: "تم الإنجاز: {percent}%",
+        templates_title: "ابدأ بسرعة باستخدام قالب جاهز",
+        template_use: "استخدم هذا القالب",
+        template_ecommerce_title: "E-commerce SRS",
+        template_ecommerce_desc: "متجر إلكتروني مع إدارة منتجات، سلة شراء، دفع، وتتبع الطلبات.",
+        template_saas_title: "SaaS Platform",
+        template_saas_desc: "منصة SaaS متعددة العملاء مع خطط اشتراك وصلاحيات ولوحة تقارير.",
+        template_mobile_title: "Mobile App",
+        template_mobile_desc: "تطبيق جوال مع تسجيل مستخدمين، إشعارات، وتكامل API."
     },
     en: {
         nav_dashboard: "Dashboard",
         nav_projects: "Projects",
-        nav_chat: "Smart Chat",
+        nav_chat: "AI Interview",
+        nav_templates: "Templates",
         interview_mode: "Interview mode",
-        nav_srs: "SRS Review",
-        nav_bot: "Bot Settings",
-        nav_ai_config: "AI Settings",
+        nav_srs: "SRS Documents",
+        nav_settings: "Settings",
+        nav_ai_config: "AI Model",
+        ai_config_title: "AI Model",
+        settings_title: "Settings",
+        settings_tab_ai: "AI Model",
+        settings_tab_bot: "Telegram Bot",
+        project_files_btn: "Project Files",
         stat_projects: "Total Projects",
         stat_docs: "Documents",
         stat_chunks: "Text Chunks",
         recent_projects: "Recent Projects",
         view_all: "View All",
         your_projects: "Your Projects",
-        welcome_title: "Welcome to RAGMind",
+        project_goal_hint: "Add a brief goal to help our AI generate a better SRS.",
+        welcome_title: "Welcome to Tawasul",
         project_name_ph: "Ex: AI Research",
         project_desc_ph: "Short description...",
         create_project_btn: "Create Project",
@@ -198,33 +206,13 @@ const i18n = {
         bot_name: "Bot Name",
         update_profile: "Update Profile",
         processing_label: "Processing",
-        stage_chunking: "Chunking",
-        stage_embedding: "Embedding",
-        stage_indexing: "Indexing",
         ai_settings_title: "Model Settings",
-        ai_settings_desc: "Select generation and embedding providers.",
-        retrieval_top_k_label: "Retrieved chunks",
-        retrieval_top_k_desc: "Number of chunks used to answer.",
-        chunk_strategy_label: "Chunking strategy",
-        chunk_strategy_parent: "Parent/child (small-to-big)",
-        chunk_strategy_simple: "Simple",
-        chunk_size_label: "Chunk size",
-        chunk_overlap_label: "Chunk overlap",
-        parent_chunk_size_label: "Parent chunk size",
-        parent_chunk_overlap_label: "Parent overlap",
-        retrieval_candidate_k_label: "Candidate pool",
-        hybrid_enabled_label: "Hybrid search",
-        hybrid_alpha_label: "Dense weight",
-        rewrite_enabled_label: "Query rewriting",
-        rerank_enabled_label: "Reranking",
-        rerank_top_k_label: "Rerank top K",
+        ai_settings_desc: "Select the generation provider.",
         gen_provider_label: "Generation Provider",
-        embed_provider_label: "Embedding Provider",
         select_project_ph: "Select a project...",
         delete_confirm: "Are you sure?",
         success_saved: "Saved successfully",
         error_generic: "Something went wrong",
-        vector_db_label: "Vector Database",
         embedding_size_label: "Embedding Dimensions",
         config_group_providers: "Providers",
         config_group_chunking: "Chunking",
@@ -240,6 +228,9 @@ const i18n = {
         srs_subtitle: "A first draft of requirements with items that need clarification.",
         srs_refresh: "Refresh Draft",
         srs_export: "Export SRS",
+        srs_export_pdf: "Export PDF",
+        srs_export_word: "Export Word",
+        srs_export_markdown: "Export Markdown",
         srs_summary_title: "Quick Summary",
         srs_open_questions: "Open Questions",
         srs_next_steps: "Next Steps",
@@ -292,16 +283,62 @@ const i18n = {
         interview_saved: "Interview progress saved. You can resume later from this project.",
         interview_completed: "Interview complete! Review final answers before submit.",
         interview_duplicate_guard: "This answer looks repeated. Add a new detail or use Skip.",
-        interview_progress: "Completed: {percent}%"
+        interview_progress: "Completed: {percent}%",
+        templates_title: "Start faster with ready templates",
+        template_use: "Use this template",
+        template_ecommerce_title: "E-commerce SRS",
+        template_ecommerce_desc: "Online store with catalog, cart, checkout, payments, and order tracking.",
+        template_saas_title: "SaaS Platform",
+        template_saas_desc: "Multi-tenant SaaS platform with subscriptions, roles, and reporting dashboard.",
+        template_mobile_title: "Mobile App",
+        template_mobile_desc: "Mobile application with onboarding, notifications, and API integration."
     }
 };
 
 const INTERVIEW_AREAS = ['discovery', 'scope', 'users', 'features', 'constraints'];
-const ADMIN_ONLY_VIEWS = new Set(['bot-config']);
+const ADMIN_ONLY_VIEWS = new Set(['settings']);
+const IDEA_TEMPLATES = {
+    ecommerce: {
+        ar: {
+            title: 'E-commerce SRS',
+            description: 'متجر إلكتروني مع إدارة المنتجات، سلة الشراء، الدفع، وتتبع الطلبات.',
+            prompt: 'نطاق المشروع: متجر إلكتروني B2C. ركّز على إدارة المنتجات، السلة، الدفع، وتتبع الشحن، وسياسات الإرجاع.'
+        },
+        en: {
+            title: 'E-commerce SRS',
+            description: 'Online store with catalog, cart, payments, and order tracking.',
+            prompt: 'Project scope: B2C e-commerce. Focus on product catalog, cart, checkout, shipping tracking, and returns policy.'
+        }
+    },
+    saas: {
+        ar: {
+            title: 'SaaS Platform',
+            description: 'منصة SaaS متعددة العملاء مع اشتراكات وصلاحيات ولوحات تقارير.',
+            prompt: 'نطاق المشروع: منصة SaaS متعددة العملاء. ركّز على خطط الاشتراك، إدارة الفرق، الصلاحيات، ولوحة تقارير للإدارة.'
+        },
+        en: {
+            title: 'SaaS Platform',
+            description: 'Multi-tenant SaaS platform with subscriptions, roles, and dashboards.',
+            prompt: 'Project scope: multi-tenant SaaS. Focus on subscription plans, team management, role permissions, and admin reporting dashboard.'
+        }
+    },
+    'mobile-app': {
+        ar: {
+            title: 'Mobile App',
+            description: 'تطبيق جوال مع تسجيل المستخدمين، إشعارات، وتكامل API.',
+            prompt: 'نطاق المشروع: تطبيق جوال iOS/Android. ركّز على التسجيل، ملفات المستخدمين، الإشعارات، وتجربة استخدام سريعة.'
+        },
+        en: {
+            title: 'Mobile App',
+            description: 'Mobile app with onboarding, notifications, and API integration.',
+            prompt: 'Project scope: iOS/Android mobile app. Focus on onboarding, profile management, notifications, and fast UX flows.'
+        }
+    }
+};
 
 // State Management
 const state = {
-    currentView: 'dashboard',
+    currentView: 'projects',
     projects: [],
     stats: null,
     selectedProject: null,
@@ -325,7 +362,10 @@ const state = {
     interviewDraftMeta: null,
     lastAssistantQuestion: '',
     lastUserInterviewAnswer: '',
+    lastRenderedSrsDraft: null,
     pendingInterviewSelectionMeta: null,
+    pendingSttMeta: null,
+    summaryCollapsed: true,
     authToken: safeStorageGet('authToken', null),
     currentUser: JSON.parse(safeStorageGet('currentUser', 'null')),
     lang: safeStorageGet('lang', 'ar'),
@@ -343,6 +383,7 @@ function getFallbackSrsDraft() {
             : 'No draft yet. Start a chat and click refresh to generate one.',
         metrics: [],
         sections: [],
+        activity_diagram: [],
         questions: [],
         nextSteps: []
     };
@@ -386,31 +427,54 @@ function authHeaders(extra = {}) {
     return headers;
 }
 
+// --- Network Offline Banner helpers (3.5) ---
+
+function showOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.classList.add('visible');
+}
+
+function hideOfflineBanner() {
+    const banner = document.getElementById('offline-banner');
+    if (banner) banner.classList.remove('visible');
+}
+
+async function throwIfNotOk(response, fallbackMessage = 'Request failed') {
+    if (!response.ok) {
+        const contentType = response.headers.get('content-type') || '';
+        const err = contentType.includes('application/json') ? await response.json() : null;
+        throw new Error(err?.detail || fallbackMessage);
+    }
+    return response;
+}
+
 const api = {
-    async get(endpoint) {
+    async get(endpoint, requestOptions = {}) {
         try {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-                headers: authHeaders()
+                headers: authHeaders(),
+                ...requestOptions
             });
-            if (!response.ok) {
-                const err = new Error(`HTTP error! status: ${response.status}`);
-                err.status = response.status;
-                throw err;
+            if (response.status === 401) {
+                clearAuthState();
+                showAuthScreen();
+                throw new Error(state.lang === 'ar' ? 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى' : 'Session expired, please login again');
             }
+            await throwIfNotOk(response);
+            hideOfflineBanner();
             return await response.json();
         } catch (error) {
             console.error(`API Get Error (${endpoint}):`, error);
-            if (error.status === 401) {
-                clearAuthState();
-                showAuthScreen();
-                return;
+            if (error instanceof TypeError) {
+                showOfflineBanner();
+            } else {
+                showNotification(error.message || (state.lang === 'ar' ? 'خطأ في الاتصال بالسيرفر' : 'Server Connection Error'), 'error');
             }
-            showNotification(state.lang === 'ar' ? 'خطأ في الاتصال بالسيرفر' : 'Server Connection Error', 'error');
             throw error;
         }
     },
 
-    async post(endpoint, data, isFormData = false) {
+    async post(endpoint, data, isFormData = false, requestOptions = {}) {
         try {
             const headers = isFormData
                 ? authHeaders()
@@ -418,41 +482,43 @@ const api = {
             const options = {
                 method: 'POST',
                 headers,
-                body: isFormData ? data : JSON.stringify(data)
+                body: isFormData ? data : JSON.stringify(data),
+                ...requestOptions
             };
 
             const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
-            if (!response.ok) {
-                if (response.status === 401) {
-                    clearAuthState();
-                    showAuthScreen();
-                    return;
-                }
-                const errorData = await response.json();
-                throw new Error(errorData.detail || 'Error');
+            if (response.status === 401) {
+                clearAuthState();
+                showAuthScreen();
+                throw new Error(state.lang === 'ar' ? 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى' : 'Session expired, please login again');
             }
+            await throwIfNotOk(response);
+            hideOfflineBanner();
             return await response.json();
         } catch (error) {
             console.error(`API Post Error (${endpoint}):`, error);
-            showNotification(error.message, 'error');
+            if (error instanceof TypeError) {
+                showOfflineBanner();
+            } else {
+                showNotification(error.message, 'error');
+            }
             throw error;
         }
     },
 
-    async delete(endpoint) {
+    async delete(endpoint, requestOptions = {}) {
         try {
             const response = await fetch(`${API_BASE_URL}${endpoint}`, {
                 method: 'DELETE',
-                headers: authHeaders()
+                headers: authHeaders(),
+                ...requestOptions
             });
-            if (!response.ok) {
-                if (response.status === 401) {
-                    clearAuthState();
-                    showAuthScreen();
-                    return;
-                }
-                throw new Error('Delete failed');
+            if (response.status === 401) {
+                clearAuthState();
+                showAuthScreen();
+                throw new Error(state.lang === 'ar' ? 'انتهت الجلسة، يرجى تسجيل الدخول مرة أخرى' : 'Session expired, please login again');
             }
+            await throwIfNotOk(response);
             return true;
         } catch (error) {
             console.error(`API Delete Error (${endpoint}):`, error);
@@ -477,11 +543,11 @@ const views = {
             state.projects = projects;
 
             // Animate stats
-            animateCounter('stat-projects', stats.projects);
-            animateCounter('stat-docs', stats.documents);
+            animateCounter('stat-projects-dashboard', stats.projects);
+            animateCounter('stat-docs-dashboard', stats.documents);
 
             // Render recent projects
-            const list = document.getElementById('recent-projects-list');
+            const list = document.getElementById('recent-projects-list-dashboard');
             list.innerHTML = '';
             if (projects.length === 0) {
                 list.innerHTML = createEmptyState('fa-folder-open', 'empty_projects', 'empty_projects_desc');
@@ -515,8 +581,14 @@ const views = {
                 projectsNewBtn.onclick = handleNewProject;
             }
 
-            const projects = await api.get('/projects/');
+            const [projects, stats] = await Promise.all([
+                api.get('/projects/'),
+                api.get('/stats/')
+            ]);
             state.projects = projects;
+
+            animateCounter('stat-projects', stats.projects || projects.length || 0);
+            animateCounter('stat-docs', stats.documents || 0);
 
             const list = document.getElementById('all-projects-list');
             list.innerHTML = '';
@@ -530,43 +602,6 @@ const views = {
             applyTranslations();
         } catch (error) {
             console.error('Projects Load Error:', error);
-        } finally {
-            hideLoader();
-        }
-    },
-
-    async projectDetail(projectId) {
-        renderTemplate('project-detail-template');
-        showLoader();
-
-        try {
-            const project = await api.get(`/projects/${projectId}`);
-            const docs = await api.get(`/projects/${projectId}/documents`);
-
-            state.selectedProject = project;
-
-            document.getElementById('project-name-title').textContent = project.name;
-
-            renderDocsList(docs);
-            startDocPolling(projectId, docs);
-
-            // Setup Upload Zone
-            setupUploadZone(projectId);
-
-            // Interview CTA: navigate to chat with interview mode ON
-            const interviewBtn = document.getElementById('project-start-interview-btn');
-            if (interviewBtn) {
-                interviewBtn.onclick = () => {
-                    state.interviewMode = true;
-                    state.pendingProjectSelect = projectId;
-                    switchView('chat');
-                };
-            }
-
-            document.getElementById('back-to-projects').onclick = () => switchView('projects');
-            applyTranslations();
-        } catch (error) {
-            console.error('Project Detail Load Error:', error);
         } finally {
             hideLoader();
         }
@@ -589,16 +624,38 @@ const views = {
         if (state.pendingProjectSelect) {
             select.value = state.pendingProjectSelect;
             state.chatProjectId = state.pendingProjectSelect;
+            updateChatProjectHeader(state.pendingProjectSelect);
             loadChatHistory(state.pendingProjectSelect);
             state.pendingProjectSelect = null;
         } else if (state.chatProjectId) {
             select.value = state.chatProjectId;
+            updateChatProjectHeader(state.chatProjectId);
             loadChatHistory(state.chatProjectId);
         } else if (projects.length > 0) {
-            const firstProjectId = Number(projects[0].id);
-            select.value = String(firstProjectId);
-            state.chatProjectId = firstProjectId;
-            loadChatHistory(firstProjectId);
+            const lastProjectId = Number(projects[projects.length - 1].id);
+            select.value = String(lastProjectId);
+            state.chatProjectId = lastProjectId;
+            updateChatProjectHeader(lastProjectId);
+            loadChatHistory(lastProjectId);
+        } else {
+            // No projects at all — show empty state CTA
+            const messagesContainer = document.getElementById('chat-messages');
+            if (messagesContainer) {
+                updateChatProjectHeader(null);
+                messagesContainer.innerHTML = `
+                    <div class="welcome-msg-pro">
+                        <div class="welcome-icon"><i class="fas fa-folder-plus"></i></div>
+                        <h2>${state.lang === 'ar' ? 'لا توجد مشاريع بعد' : 'No projects yet'}</h2>
+                        <p>${state.lang === 'ar' ? 'أنشئ مشروعك الأول لبدء المقابلة الذكية' : 'Create your first project to start an interview'}</p>
+                        <button class="btn btn-primary mt-4" id="chat-new-project-cta">
+                            <i class="fas fa-plus"></i>
+                            <span>${state.lang === 'ar' ? 'إنشاء مشروع جديد' : 'Create a project'}</span>
+                        </button>
+                    </div>
+                `;
+                const cta = document.getElementById('chat-new-project-cta');
+                if (cta) cta.onclick = handleNewProject;
+            }
         }
 
         if (select.value) {
@@ -622,6 +679,7 @@ const views = {
         select.onchange = async () => {
             if (select.value) {
                 state.chatProjectId = Number.parseInt(select.value, 10);
+                updateChatProjectHeader(state.chatProjectId);
                 loadChatHistory(state.chatProjectId);
                 const draft = await loadInterviewDraft(state.chatProjectId);
                 if (draft) {
@@ -660,6 +718,7 @@ const views = {
         const langSelect = document.getElementById('chat-lang');
         const clearBtn = document.getElementById('clear-chat-btn');
         const interviewToggle = document.getElementById('chat-interview-toggle');
+        const summaryToggleBtn = document.getElementById('summary-toggle-btn');
 
         // Enable/disable send button based on input
         chatInput.oninput = () => {
@@ -796,6 +855,8 @@ const views = {
         }
 
         // Init interview progress bar state
+        updateChatProjectHeader(Number.parseInt(select.value || '0', 10) || null);
+        applySummaryDrawerState();
         updateInterviewProgress(state.lastCoverage, false);
         updateInterviewAssistBar(state.lastCoverage);
         updateResumeButtonState();
@@ -804,23 +865,47 @@ const views = {
         const liveDocClose = document.getElementById('live-doc-close');
         if (liveDocClose) {
             liveDocClose.onclick = () => {
-                const panel = document.getElementById('live-doc-panel');
-                if (panel) panel.style.display = 'none';
+                state.summaryCollapsed = true;
+                applySummaryDrawerState();
             };
         }
 
-        // Upload reference docs button
-        const uploadRefBtn = document.getElementById('chat-upload-ref-btn');
-        if (uploadRefBtn) {
-            uploadRefBtn.onclick = () => {
-                const projectId = select.value;
-                if (!projectId) {
-                    showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
-                    return;
-                }
-                openUploadModal(parseInt(projectId));
+        if (summaryToggleBtn) {
+            const summaryText = state.lang === 'ar' ? 'ملخص المتطلبات' : 'Requirements Summary';
+            const summaryLabel = summaryToggleBtn.querySelector('span');
+            if (summaryLabel) summaryLabel.textContent = summaryText;
+            summaryToggleBtn.title = summaryText;
+            summaryToggleBtn.dataset.tooltip = summaryText;
+            summaryToggleBtn.onclick = () => {
+                state.summaryCollapsed = !state.summaryCollapsed;
+                applySummaryDrawerState();
             };
         }
+
+        // Project Files drawer toggle
+        const filesBtn = document.getElementById('chat-files-btn');
+        const filesDrawer = document.getElementById('files-drawer');
+        const filesDrawerClose = document.getElementById('files-drawer-close');
+
+        const openFilesDrawer = async () => {
+            const projectId = Number.parseInt(select.value || '0', 10);
+            if (!projectId) {
+                showNotification(state.lang === 'ar' ? 'اختر مشروعاً أولاً' : 'Select a project first', 'warning');
+                return;
+            }
+            filesDrawer.style.display = '';
+            setupUploadZone(projectId);
+            try {
+                const docs = await api.get(`/projects/${projectId}/documents`);
+                renderDocsList(docs);
+                startDocPolling(projectId, docs);
+            } catch (e) {
+                console.error('Files Drawer Load Error:', e);
+            }
+        };
+
+        if (filesBtn) filesBtn.onclick = openFilesDrawer;
+        if (filesDrawerClose) filesDrawerClose.onclick = () => { filesDrawer.style.display = 'none'; };
 
         // Clear chat handler
         if (clearBtn) {
@@ -839,27 +924,16 @@ const views = {
                 }
 
                 messagesContainer.innerHTML = `
-                    <div class="welcome-msg-pro">
-                        <div class="welcome-icon">
-                            <i class="fas fa-robot"></i>
-                        </div>
-                        <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
-                        <p>${state.lang === 'ar' ? 'اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.' : 'Select a project from above and start asking questions.'}</p>
-                    </div>
+                    ${getChatWelcomeMarkup(projectId)}
                 `;
+                bindSuggestionChips();
                 state.chatMessages = [];
                 showNotification(state.lang === 'ar' ? 'تم مسح المحادثة' : 'Chat cleared', 'success');
             };
         }
 
         // Suggestion chips handler
-        document.querySelectorAll('.suggestion-chip').forEach(chip => {
-            chip.onclick = () => {
-                chatInput.value = chip.textContent;
-                chatInput.oninput();
-                chatInput.focus();
-            };
-        });
+        bindSuggestionChips();
 
         applyTranslations();
     },
@@ -871,9 +945,15 @@ const views = {
         try {
             const projects = await api.get('/projects/');
             const select = document.getElementById('srs-project-select');
+            const exportFormat = document.getElementById('srs-export-format');
             const refreshBtn = document.getElementById('srs-refresh-btn');
             const exportBtn = document.getElementById('srs-export-btn');
             const bookBtn = document.getElementById('srs-book-btn');
+
+            if (exportFormat) {
+                updateExportButtonLabel(exportFormat.value || 'pdf');
+                exportFormat.onchange = () => updateExportButtonLabel(exportFormat.value || 'pdf');
+            }
 
             projects.forEach(p => {
                 const opt = document.createElement('option');
@@ -882,7 +962,11 @@ const views = {
                 select.appendChild(opt);
             });
 
-            if (state.selectedProject && select) {
+            // Support navigation from project cards (pending selection), then fallback to selected project
+            if (state.pendingProjectSelect && select) {
+                select.value = state.pendingProjectSelect;
+                state.pendingProjectSelect = null;
+            } else if (state.selectedProject && select) {
                 select.value = state.selectedProject.id;
             }
 
@@ -901,7 +985,8 @@ const views = {
                     return;
                 }
                 setButtonLoading(exportBtn, true);
-                await downloadSrsPdf(select.value);
+                const selectedFormat = exportFormat?.value || 'pdf';
+                await exportSrsDocument(select.value, selectedFormat);
                 setButtonLoading(exportBtn, false);
             };
             bookBtn.onclick = () => openBookingModal();
@@ -957,32 +1042,71 @@ const views = {
         }
     },
 
-    async 'bot-config'() {
-        renderTemplate('bot-config-template');
+    async settings() {
+        renderTemplate('settings-template');
         showLoader();
 
         try {
-            const [projects, config] = await Promise.all([
+            const [projects, botConfig, aiConfig] = await Promise.all([
                 api.get('/projects/'),
-                api.get('/bot/config')
+                api.get('/bot/config'),
+                api.get('/config/providers'),
             ]);
 
-            const select = document.getElementById('bot-active-project');
+            const aiSelect = document.getElementById('settings-ai-gen-provider');
+            const aiSaveBtn = document.getElementById('settings-save-ai-config-btn');
+
+            const genProviders = aiConfig.available?.llm || [];
+            const labelMap = {
+                gemini: 'Gemini 2.5 Flash',
+                'gemini-2.5-lite-flash': 'Gemini 2.5 Lite Flash',
+                'openrouter-gemini-2.0-flash': 'OpenRouter: Gemini 2.0 Flash',
+                'openrouter-free': 'OpenRouter: Free',
+                'groq-llama-3.3-70b-versatile': 'Groq: Llama 3.3 70B',
+                'cerebras-llama-3.3-70b': 'Cerebras: Llama 3.3 70B',
+                'cerebras-llama-3.1-8b': 'Cerebras: Llama 3.1 8B',
+                cohere: 'Cohere',
+            };
+
+            genProviders.forEach((name) => {
+                const opt = document.createElement('option');
+                opt.value = name;
+                opt.textContent = labelMap[name] || name;
+                if (aiConfig.llm_provider === name) opt.selected = true;
+                aiSelect.appendChild(opt);
+            });
+
+            if (aiSaveBtn) {
+                aiSaveBtn.onclick = async () => {
+                    setButtonLoading(aiSaveBtn, true);
+                    try {
+                        await api.post('/config/providers', { llm_provider: aiSelect.value });
+                        showNotification(i18n[state.lang].success_saved, 'success');
+                    } catch (e) {
+                        console.error(e);
+                    } finally {
+                        setButtonLoading(aiSaveBtn, false);
+                    }
+                };
+            }
+
+            // --- Bot config ---
+            const botSelect = document.getElementById('bot-active-project');
             projects.forEach(p => {
                 const opt = document.createElement('option');
                 opt.value = p.id;
                 opt.textContent = p.name;
-                if (config.active_project_id == p.id) opt.selected = true;
-                select.appendChild(opt);
+                if (botConfig.active_project_id == p.id) opt.selected = true;
+                botSelect.appendChild(opt);
             });
 
             document.getElementById('save-bot-config-btn').onclick = async () => {
-                const projectId = select.value;
+                const projectId = botSelect.value;
                 if (!projectId) return;
                 const btn = document.getElementById('save-bot-config-btn');
                 setButtonLoading(btn, true);
                 try {
-                    await api.post('/bot/config', { active_project_id: parseInt(projectId) });
+                    await api.post('/bot/config', { active_project_id: Number.parseInt(projectId, 10) });
                     showNotification(i18n[state.lang].success_saved, 'success');
                 } catch (e) {
                     console.error(e);
@@ -1010,82 +1134,7 @@ const views = {
 
             applyTranslations();
         } catch (error) {
-            console.error('Bot Config Error:', error);
-        } finally {
-            hideLoader();
-        }
-    },
-
-    async 'ai-config'() {
-        renderTemplate('ai-config-template');
-        showLoader();
-
-        try {
-            const config = await api.get('/config/providers');
-            const genSelect = document.getElementById('ai-gen-provider');
-            const embedSelect = document.getElementById('ai-embed-provider');
-            const embeddingSizeSelect = document.getElementById('embedding-size');
-
-            const genProviders = config.available?.llm || [];
-            const embedProviders = config.available?.embedding || [];
-
-
-            const labelMap = {
-                gemini: 'Gemini 2.5 Flash',
-                'gemini-2.5-lite-flash': 'Gemini 2.5 Lite Flash',
-                'openrouter-gemini-2.0-flash': 'OpenRouter: Gemini 2.0 Flash',
-                'openrouter-free': 'OpenRouter: Free',
-                'groq-llama-3.3-70b-versatile': 'Groq: Llama 3.3 70B Versatile',
-                'groq-gpt-oss-120b': 'Groq: GPT-oss 120B',
-                'cerebras-llama-3.3-70b': 'Cerebras: Llama 3.3 70B',
-                'cerebras-llama-3.1-8b': 'Cerebras: Llama 3.1 8B',
-                'cerebras-gpt-oss-120b': 'Cerebras: GPT-oss 120B',
-                cohere: 'Cohere',
-                voyage: 'Voyage AI',
-                'bge-m3': 'BAAI/bge-m3 (local)'
-            };
-
-            genProviders.forEach((name) => {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = labelMap[name] || name;
-                if (config.llm_provider === name) opt.selected = true;
-                genSelect.appendChild(opt);
-            });
-
-            embedProviders.forEach((name) => {
-                const opt = document.createElement('option');
-                opt.value = name;
-                opt.textContent = labelMap[name] || name;
-                if (config.embedding_provider === name) opt.selected = true;
-                embedSelect.appendChild(opt);
-            });
-
-            if (typeof config.voyage_output_dimension === 'number') {
-                embeddingSizeSelect.value = String(config.voyage_output_dimension);
-            }
-
-            document.getElementById('save-ai-config-btn').onclick = async () => {
-                const btn = document.getElementById('save-ai-config-btn');
-                setButtonLoading(btn, true);
-                try {
-                    const embeddingSizeValue = parseInt(embeddingSizeSelect.value, 10);
-                    await api.post('/config/providers', {
-                        llm_provider: genSelect.value,
-                        embedding_provider: embedSelect.value,
-                        voyage_output_dimension: Number.isFinite(embeddingSizeValue) ? embeddingSizeValue : undefined
-                    });
-                    showNotification(i18n[state.lang].success_saved, 'success');
-                } catch (e) {
-                    console.error(e);
-                } finally {
-                    setButtonLoading(btn, false);
-                }
-            };
-
-            applyTranslations();
-        } catch (error) {
-            console.error('AI Config Error:', error);
+            console.error('Settings Error:', error);
         } finally {
             hideLoader();
         }
@@ -1195,6 +1244,29 @@ function loadInterviewDraftLocal(projectId) {
     }
 }
 
+function getProjectProgressInfo(project) {
+    const draft = loadInterviewDraftLocal(project.id);
+    const coverage = draft?.coverage || null;
+    const progress = coverage ? getAverageCoverage(coverage) : 0;
+    const done = progress >= 85;
+    if (!draft) {
+        return {
+            progress: 0,
+            label: state.lang === 'ar' ? 'لم تبدأ المقابلة' : 'Interview not started'
+        };
+    }
+    if (done) {
+        return {
+            progress: 100,
+            label: state.lang === 'ar' ? 'SRS جاهز للمراجعة' : 'SRS ready for review'
+        };
+    }
+    return {
+        progress,
+        label: state.lang === 'ar' ? `المقابلة قيد التقدم ${progress}%` : `Interview in progress ${progress}%`
+    };
+}
+
 async function loadInterviewDraft(projectId) {
     if (!projectId) return null;
 
@@ -1229,8 +1301,8 @@ function normalizeInterviewText(value) {
     return String(value || '')
         .trim()
         .toLowerCase()
-        .replace(/\s+/g, ' ')
-        .replace(/[?.!،؛:]+$/g, '');
+    .replaceAll(/\s+/g, ' ')
+    .replaceAll(/[?.!،؛:]+$/g, '');
 }
 
 function getAverageCoverage(coverage) {
@@ -1247,13 +1319,8 @@ function parseSuggestedAnswers(rawSuggestions) {
         const trimmed = rawSuggestions.trim();
         if (!trimmed) return [];
 
-        try {
-            const parsed = JSON.parse(trimmed);
-            if (Array.isArray(parsed)) return parsed;
-            if (parsed && Array.isArray(parsed.suggested_answers)) return parsed.suggested_answers;
-            if (parsed && Array.isArray(parsed.options)) return parsed.options;
-        } catch (error_) {
-        }
+        const parsedList = parseSuggestedAnswersFromJson(trimmed);
+        if (parsedList.length) return parsedList;
 
         return trimmed
             .split(/\n|•|-\s+/)
@@ -1262,12 +1329,29 @@ function parseSuggestedAnswers(rawSuggestions) {
     }
 
     if (rawSuggestions && typeof rawSuggestions === 'object') {
-        if (Array.isArray(rawSuggestions.suggested_answers)) return rawSuggestions.suggested_answers;
-        if (Array.isArray(rawSuggestions.options)) return rawSuggestions.options;
-        if (Array.isArray(rawSuggestions.answers)) return rawSuggestions.answers;
+        return getSuggestionArray(rawSuggestions);
     }
 
     return [];
+}
+
+function getSuggestionArray(value) {
+    if (!value || typeof value !== 'object') return [];
+    if (Array.isArray(value.suggested_answers)) return value.suggested_answers;
+    if (Array.isArray(value.options)) return value.options;
+    if (Array.isArray(value.answers)) return value.answers;
+    return [];
+}
+
+function parseSuggestedAnswersFromJson(trimmed) {
+    try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed;
+        return getSuggestionArray(parsed);
+    } catch (error_) {
+        console.warn('Failed to parse suggested answers payload.', error_);
+        return [];
+    }
 }
 
 function getQuestionAwareFallbackOptions(questionText = '', stage = 'discovery') {
@@ -1410,69 +1494,83 @@ function attachInterviewSelectToMessage(messageId, suggestedAnswers = [], questi
     const msgDiv = document.getElementById(`msg-${messageId}`);
     if (!msgDiv) return;
 
+    // Disable all previous selection wrappers
     document.querySelectorAll('.interview-answer-select-wrap').forEach((node) => {
-        const optionInputs = node.querySelectorAll('input[type="radio"]');
+        node.querySelectorAll('.suggestion-card').forEach(card => card.classList.add('disabled'));
         const btnEl = node.querySelector('button');
-        optionInputs.forEach((inputEl) => {
-            inputEl.disabled = true;
-        });
         if (btnEl) btnEl.disabled = true;
     });
 
     const options = getInterviewAnswerOptions(suggestedAnswers, questionText, stage);
-    const optionsName = `interview-option-${messageId}-${Date.now()}`;
     const wrapper = document.createElement('div');
     wrapper.className = 'interview-answer-select-wrap';
+
+    // Build card chips
+    const cardsHtml = options.map((opt, idx) => `
+        <div class="suggestion-card" data-idx="${idx}" data-value="${escapeHtml(opt)}" role="radio" aria-checked="false" tabindex="0">
+            <span class="suggestion-card-radio"></span>
+            <span class="suggestion-card-text">${escapeHtml(opt)}</span>
+        </div>
+    `).join('');
+
     wrapper.innerHTML = `
-        <div class="interview-answer-options" role="radiogroup" aria-label="${escapeHtml(i18n[state.lang].interview_select_hint)}">
-            ${options.map((opt, idx) => `
-                <label class="interview-answer-option" for="${optionsName}-${idx}">
-                    <input id="${optionsName}-${idx}" type="radio" name="${optionsName}" value="${escapeHtml(opt)}">
-                    <span>${escapeHtml(opt)}</span>
-                </label>
-            `).join('')}
+        <div class="suggestion-cards-list" role="radiogroup" aria-label="${escapeHtml(i18n[state.lang].interview_select_hint)}">
+            ${cardsHtml}
         </div>
         <button class="btn btn-secondary interview-mini-btn" disabled>${escapeHtml(i18n[state.lang].interview_select_send)}</button>
     `;
 
-    const optionInputs = wrapper.querySelectorAll('input[type="radio"]');
     const sendBtn = wrapper.querySelector('button');
-    if (optionInputs.length > 0 && sendBtn) {
-        optionInputs.forEach((optionInput) => {
-            optionInput.onchange = () => {
-                sendBtn.disabled = !wrapper.querySelector('input[type="radio"]:checked');
-            };
-        });
+    let selectedValue = null;
 
+    wrapper.querySelectorAll('.suggestion-card').forEach(card => {
+        const activate = () => {
+            wrapper.querySelectorAll('.suggestion-card').forEach(c => {
+                c.classList.remove('selected');
+                c.setAttribute('aria-checked', 'false');
+            });
+            card.classList.add('selected');
+            card.setAttribute('aria-checked', 'true');
+            selectedValue = card.dataset.value;
+            if (sendBtn) sendBtn.disabled = false;
+        };
+        card.onclick = activate;
+        card.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') activate(); };
+    });
+
+    if (sendBtn) {
         sendBtn.onclick = () => {
+            if (!selectedValue) return;
             const input = document.getElementById('chat-input');
-            const selectedInput = wrapper.querySelector('input[type="radio"]:checked');
-            if (!input || !selectedInput || !selectedInput.value) return;
+            if (!input) return;
             state.pendingInterviewSelectionMeta = {
                 interview_selection: true,
                 source: 'suggested_answer',
                 stage,
                 question: questionText || ''
             };
-            input.value = selectedInput.value;
+            input.value = selectedValue;
             input.dispatchEvent(new Event('input', { bubbles: true }));
             handleChatSubmit();
-            optionInputs.forEach((optionInput) => {
-                optionInput.disabled = true;
-            });
+            wrapper.querySelectorAll('.suggestion-card').forEach(c => c.classList.add('disabled'));
             sendBtn.disabled = true;
         };
     }
 
     msgDiv.querySelector('.msg-body')?.appendChild(wrapper);
+
+    // Scroll chat to show the newly appended cards
+    const container = document.getElementById('chat-messages');
+    if (container) {
+        requestAnimationFrame(() => {
+            container.scrollTop = container.scrollHeight;
+        });
+    }
 }
 
-function updateInterviewAssistBar(coverage, signals = null, livePatch = null) {
+function updateInterviewAssistBar(coverage) {
     const assistBar = document.getElementById('interview-assist-bar');
-    const progressLabel = document.getElementById('interview-progress-label');
     const reviewBtn = document.getElementById('interview-review-btn');
-    const patch = livePatch || state.lastLivePatch || null;
-    const reflector = signals || state.lastInterviewSignals || null;
     if (!reviewBtn) return;
 
     if (!state.interviewMode) {
@@ -1481,49 +1579,7 @@ function updateInterviewAssistBar(coverage, signals = null, livePatch = null) {
     }
 
     const avg = getAverageCoverage(coverage || state.lastCoverage || {});
-    if (assistBar) assistBar.style.display = 'block';
-    if (progressLabel) {
-        progressLabel.textContent = i18n[state.lang].interview_progress.replace('{percent}', String(avg));
-    }
-
-    if (assistBar) {
-        let hintEl = document.getElementById('interview-assist-hint');
-        if (!hintEl) {
-            hintEl = document.createElement('div');
-            hintEl.id = 'interview-assist-hint';
-            hintEl.style.fontSize = '12px';
-            hintEl.style.marginTop = '6px';
-            hintEl.style.opacity = '0.9';
-            assistBar.appendChild(hintEl);
-        }
-
-        const focusArea = patch?.focus_area;
-        const focusLabel = focusArea ? (i18n[state.lang][`stage_${focusArea}`] || focusArea) : '';
-        let hint = '';
-
-        if (reflector?.contradiction_detected || reflector?.scope_budget_risk) {
-            hint = reflector?.reason || (state.lang === 'ar'
-                ? 'تم رصد تعارض محتمل. يفضّل تأكيد الأولويات والقيود قبل التوسع.'
-                : 'Potential mismatch detected. Confirm priorities and constraints before expanding scope.');
-        } else if (reflector?.ambiguity_detected) {
-            hint = state.lang === 'ar'
-                ? 'يرجى تحويل الوصف العام إلى متطلبات قابلة للقياس (أرقام/زمن/معيار قبول).'
-                : 'Convert broad wording into measurable requirements (numbers, timing, acceptance criteria).';
-        } else if (focusLabel) {
-            hint = state.lang === 'ar'
-                ? `التركيز الذكي القادم: ${focusLabel}`
-                : `Smart next focus: ${focusLabel}`;
-        }
-
-        hintEl.textContent = hint;
-        hintEl.style.display = hint ? 'block' : 'none';
-
-        const telemetryEl = document.getElementById('interview-telemetry-card');
-        if (telemetryEl) {
-            telemetryEl.style.display = 'none';
-            telemetryEl.innerHTML = '';
-        }
-    }
+    if (assistBar) assistBar.style.display = 'none';
 
     reviewBtn.disabled = avg < 60;
 }
@@ -1680,37 +1736,150 @@ function startLockoutCountdown(errorEl) {
     }, 1000);
 }
 
+// --- SRS Progress Stepper (3.1) ---
+
+function showSrsProgress(currentStep) {
+    const sectionsEl = document.getElementById('srs-sections');
+    if (!sectionsEl) return;
+
+    const isAr = state.lang === 'ar';
+    const steps = isAr
+        ? ['تحليل نص المقابلة', 'هيكلة المتطلبات', 'مراجعة تقنية', 'مراجعة الأعمال', 'تنقيح وإتمام الوثيقة']
+        : ['Analyzing interview transcript', 'Structuring requirements', 'Technical review', 'Business review', 'Refining & finalizing'];
+
+    const stepIcons = steps.map((label, idx) => {
+        if (idx < currentStep) return `<span class="srs-step done"><i class="fas fa-check-circle"></i> ${label}</span>`;
+        if (idx === currentStep) return `<span class="srs-step active"><i class="fas fa-spinner fa-spin"></i> ${label}</span>`;
+        return `<span class="srs-step pending"><i class="far fa-circle"></i> ${label}</span>`;
+    }).join('');
+
+    sectionsEl.innerHTML = `
+        <div class="srs-progress-stepper">
+            <p class="srs-progress-title">${isAr ? 'جارٍ إنشاء مستند المتطلبات...' : 'Generating your SRS...'}</p>
+            <div class="srs-steps">${stepIcons}</div>
+        </div>
+    `;
+}
+
+function hideSrsProgress() {
+    // Stepper will be overwritten naturally by renderSrsDraft or guidance banner
+}
+
+// --- SRS Quality-Gate Guidance Banner (3.3) ---
+
+function showSrsGuidanceBanner(message) {
+    const sectionsEl = document.getElementById('srs-sections');
+    if (!sectionsEl) return;
+    const isAr = state.lang === 'ar';
+    sectionsEl.innerHTML = `
+        <div class="srs-guidance-banner">
+            <div class="srs-guidance-icon"><i class="fas fa-triangle-exclamation"></i></div>
+            <div class="srs-guidance-body">
+                <strong>${isAr ? 'محتوى غير كافٍ بعد' : 'Not enough content yet'}</strong>
+                <p>${message}</p>
+            </div>
+            <div class="srs-guidance-actions">
+                <button class="btn btn-primary btn-sm" id="srs-go-interview-btn">
+                    ${isAr ? 'الذهاب إلى المقابلة' : 'Go to Interview'}
+                    <i class="fas fa-arrow-left" style="margin-${isAr ? 'right' : 'left'}:6px"></i>
+                </button>
+                <button class="btn btn-sm srs-guidance-dismiss" id="srs-guidance-dismiss-btn">${isAr ? 'تجاهل' : 'Dismiss'}</button>
+            </div>
+        </div>
+    `;
+    const goBtn = document.getElementById('srs-go-interview-btn');
+    if (goBtn) goBtn.onclick = () => switchView('chat');
+    const dismissBtn = document.getElementById('srs-guidance-dismiss-btn');
+    if (dismissBtn) dismissBtn.onclick = () => { sectionsEl.innerHTML = ''; };
+}
+
 async function loadSrsDraft(projectId, forceRefresh = false) {
     if (state.srsRefreshing) return;
     state.srsRefreshing = true;
-    try {
-        let draft;
-        if (!forceRefresh) {
-            try {
-                draft = await api.get(`/projects/${projectId}/srs`);
-            } catch (error) {
-                if (error.status !== 404) throw error;
-            }
-        }
 
+    let progressTimers = [];
+
+    try {
+        let draft = await tryLoadExistingSrs(projectId, forceRefresh);
         if (!draft) {
-            draft = await api.post(`/projects/${projectId}/srs/refresh`, {
-                language: state.lang
-            });
+            draft = await generateSrsDraftWithProgress(projectId);
         }
 
         renderSrsDraft(draft.content, draft);
     } catch (error) {
+        clearSrsProgressTimers(progressTimers);
+        progressTimers = [];
         console.error('SRS Load Error:', error);
-        renderSrsDraft(getFallbackSrsDraft(), null);
-        showNotification(state.lang === 'ar' ? 'تعذر تحميل المسودة' : 'Failed to load draft', 'error');
+        handleSrsLoadError(error);
     } finally {
         state.srsRefreshing = false;
     }
 }
 
+async function tryLoadExistingSrs(projectId, forceRefresh) {
+    if (forceRefresh) return null;
+    try {
+        return await api.get(`/projects/${projectId}/srs`);
+    } catch (error) {
+        if (error.status !== 404) throw error;
+        return null;
+    }
+}
+
+async function generateSrsDraftWithProgress(projectId) {
+    showSrsProgress(0);
+    const progressTimers = scheduleSrsProgressTimers();
+    try {
+        return await api.post(`/projects/${projectId}/srs/refresh`, {
+            language: state.lang
+        });
+    } finally {
+        clearSrsProgressTimers(progressTimers);
+        hideSrsProgress();
+    }
+}
+
+function handleSrsLoadError(error) {
+    const errMsg = error?.message || '';
+    hideSrsProgress();
+
+    if (isSrsInsufficientContentError(errMsg)) {
+        showSrsGuidanceBanner(
+            state.lang === 'ar'
+                ? 'المقابلة تحتاج مزيداً من التفاصيل. أكمل 3–5 محادثات إضافية ثم حاول مرة أخرى.'
+                : 'The interview needs more detail. Complete 3–5 more turns, then try again.'
+        );
+        return;
+    }
+
+    renderSrsDraft(getFallbackSrsDraft(), null);
+    showNotification(state.lang === 'ar' ? 'تعذر تحميل المسودة' : 'Failed to load draft', 'error');
+}
+
+function scheduleSrsProgressTimers() {
+    const timers = [];
+    const stepDelays = [0, 3000, 8000, 14000, 20000];
+    stepDelays.forEach((delay, step) => {
+        const timerId = setTimeout(() => showSrsProgress(step), delay);
+        timers.push(timerId);
+    });
+    return timers;
+}
+
+function clearSrsProgressTimers(timers) {
+    timers.forEach(timerId => clearTimeout(timerId));
+}
+
+function isSrsInsufficientContentError(message) {
+    const errMsg = String(message || '');
+    return errMsg.toLowerCase().includes('insufficient content')
+        || errMsg.includes('minimum of 80 words')
+        || errMsg.includes('80 كلمة');
+}
+
 function renderSrsDraft(content, draftMeta) {
     const draft = content || getFallbackSrsDraft();
+    state.lastRenderedSrsDraft = { content: draft, meta: draftMeta || null };
     const statusEl = document.getElementById('srs-status');
     const updatedEl = document.getElementById('srs-updated');
     const summaryEl = document.getElementById('srs-summary-text');
@@ -1722,11 +1891,15 @@ function renderSrsDraft(content, draftMeta) {
     if (statusEl) statusEl.textContent = draft.status || (state.lang === 'ar' ? 'مسودة أولية' : 'First Draft');
     if (updatedEl) {
         const fallbackTime = state.lang === 'ar' ? 'آخر تحديث: الآن' : 'Last updated: now';
+        const updatedPrefix = state.lang === 'ar' ? 'آخر تحديث:' : 'Last updated:';
         updatedEl.textContent = draftMeta?.created_at
-            ? `${state.lang === 'ar' ? 'آخر تحديث:' : 'Last updated:'} ${new Date(draftMeta.created_at).toLocaleString()}`
+            ? `${updatedPrefix} ${new Date(draftMeta.created_at).toLocaleString()}`
             : draft.updated || fallbackTime;
     }
-    if (summaryEl) summaryEl.textContent = draft.summary;
+    if (summaryEl) {
+        summaryEl.textContent = draft.summary;
+        summaryEl.setAttribute('dir', 'auto');
+    }
 
     if (metricsEl) {
         metricsEl.innerHTML = (draft.metrics || [])
@@ -1741,8 +1914,66 @@ function renderSrsDraft(content, draftMeta) {
 
     if (sectionsEl) {
         const sections = draft.sections || [];
-        sectionsEl.innerHTML = sections.length
-            ? sections
+        const activityDiagram = Array.isArray(draft.activity_diagram) ? draft.activity_diagram : [];
+        const activityMermaid = typeof draft.activity_diagram_mermaid === 'string'
+            ? draft.activity_diagram_mermaid.trim()
+            : '';
+        const activityDiagrams = Array.isArray(draft.activity_diagrams) ? draft.activity_diagrams : [];
+        const activityTitle = state.lang === 'ar' ? 'مخطط النشاط' : 'Activity Diagram';
+        const textFlowLabel = state.lang === 'ar' ? 'عرض المسار النصي' : 'Show text flow';
+        const emptyDraftTitle = state.lang === 'ar' ? 'لا توجد مسودة بعد' : 'No draft yet';
+        const emptyDraftDesc = state.lang === 'ar'
+            ? 'أجرِ مقابلة مع محلل الأعمال الذكي ثم اضغط تحديث.'
+            : 'Your SRS will appear here. Start an interview to generate it.';
+        const startInterviewLabel = state.lang === 'ar' ? 'بدء المقابلة ←' : 'Start Interview →';
+
+        const activityDiagramHtml = activityDiagram.length
+            ? `
+                <article class="srs-section srs-activity-diagram">
+                    <div class="srs-section-header">
+                        <h3>${activityTitle}</h3>
+                    </div>
+                    <ul class="activity-diagram-list">
+                        ${activityDiagram
+                            .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
+                            .join('')}
+                    </ul>
+                </article>
+            `
+            : '';
+
+        const fallbackDiagramHtml = activityDiagram.length
+            ? `
+                        <details class="srs-mermaid-fallback">
+                            <summary>${textFlowLabel}</summary>
+                            <ul class="activity-diagram-list">
+                                ${activityDiagram
+                                    .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
+                                    .join('')}
+                            </ul>
+                        </details>
+                    `
+            : '';
+
+        const activityMermaidHtml = activityMermaid
+            ? `
+                <article class="srs-section srs-activity-diagram">
+                    <div class="srs-section-header">
+                        <h3>${activityTitle} (Mermaid)</h3>
+                    </div>
+                    <div class="srs-mermaid-surface" id="srs-mermaid-surface"></div>
+                    ${fallbackDiagramHtml}
+                </article>
+            `
+            : '';
+
+        const multiActivityHtml = activityDiagrams
+            .map((diagram, idx) => createActivityDiagramArticle(diagram, idx, activityTitle, textFlowLabel))
+            .filter(Boolean)
+            .join('');
+        const hasMultiActivity = multiActivityHtml.length > 0;
+        const activityHeaderHtml = hasMultiActivity ? multiActivityHtml : (activityMermaidHtml || activityDiagramHtml);
+        const sectionsHtml = sections
             .map((section, idx) => `
                 <article class="srs-section" data-confidence="${escapeHtml(section.confidence)}" data-idx="${idx}">
                     <div class="srs-section-header">
@@ -1755,19 +1986,109 @@ function renderSrsDraft(content, draftMeta) {
                         </div>
                     </div>
                     <ul>
-                        ${section.items.map((item, iIdx) => `<li data-section="${idx}" data-item="${iIdx}">${escapeHtml(item)}</li>`).join('')}
+                        ${section.items.map((item, iIdx) => `<li data-section="${idx}" data-item="${iIdx}" dir="auto">${escapeHtml(item)}</li>`).join('')}
                     </ul>
                 </article>
             `)
-            .join('')
+            .join('');
+
+        sectionsEl.innerHTML = sections.length
+            ? `${activityHeaderHtml}${sectionsHtml}`
             : `<div class="empty-state">
                     <div class="empty-state-icon"><i class="fas fa-file-circle-xmark"></i></div>
-                    <h3>${state.lang === 'ar' ? 'لا توجد مسودة بعد' : 'No draft yet'}</h3>
-                    <p>${state.lang === 'ar' ? 'ابدأ المحادثة ثم اضغط تحديث المسودة.' : 'Start a chat then refresh the draft.'}</p>
+                    <h3>${emptyDraftTitle}</h3>
+                    <p>${emptyDraftDesc}</p>
+                    <button class="btn btn-primary mt-4" onclick="switchView('chat')">
+                        <i class="fas fa-comments"></i>
+                        <span>${startInterviewLabel}</span>
+                    </button>
                 </div>`;
 
         // Attach inline edit handlers
         attachSrsEditHandlers(sectionsEl);
+
+        if (hasMultiActivity) {
+            renderAllSrsMermaid(activityDiagrams);
+        } else if (activityMermaidHtml) {
+            renderSrsMermaid(activityMermaid);
+        }
+    }
+
+    // --- User Stories ---
+    const userStories = Array.isArray(draft.user_stories) ? draft.user_stories : [];
+    let userStoriesContainer = document.getElementById('srs-user-stories');
+    if (!userStoriesContainer && sectionsEl) {
+        userStoriesContainer = document.createElement('div');
+        userStoriesContainer.id = 'srs-user-stories';
+        sectionsEl.parentNode.insertBefore(userStoriesContainer, sectionsEl.nextSibling);
+    }
+    if (userStoriesContainer) {
+        if (userStories.length) {
+            const storiesTitle = state.lang === 'ar' ? 'قصص المستخدمين ومعايير القبول' : 'User Stories & Acceptance Criteria';
+            const asLabel = state.lang === 'ar' ? 'بوصفي' : 'As a';
+            const wantLabel = state.lang === 'ar' ? 'أريد' : 'I want to';
+            const soLabel = state.lang === 'ar' ? 'حتى أتمكن من' : 'so that';
+            const acLabel = state.lang === 'ar' ? 'معايير القبول' : 'Acceptance Criteria';
+            userStoriesContainer.innerHTML = `
+                <article class="srs-section srs-user-stories">
+                    <div class="srs-section-header"><h3>${storiesTitle}</h3></div>
+                    ${userStories.map((s, i) => `
+                        <div class="user-story-card">
+                            <div class="user-story-statement" dir="auto">
+                                <strong>${asLabel}</strong> ${escapeHtml(s.role || '')},
+                                <strong>${wantLabel}</strong> ${escapeHtml(s.action || '')},
+                                <strong>${soLabel}</strong> ${escapeHtml(s.goal || '')}
+                            </div>
+                            ${Array.isArray(s.acceptance_criteria) && s.acceptance_criteria.length ? `
+                            <details class="acceptance-criteria">
+                                <summary>${acLabel} (${s.acceptance_criteria.length})</summary>
+                                <ul>${s.acceptance_criteria.map(ac => `<li dir="auto">✓ ${escapeHtml(ac)}</li>`).join('')}</ul>
+                            </details>` : ''}
+                        </div>
+                    `).join('')}
+                </article>`;
+        } else {
+            userStoriesContainer.innerHTML = '';
+        }
+    }
+
+    // --- User Roles ---
+    const userRoles = Array.isArray(draft.user_roles) ? draft.user_roles : [];
+    let userRolesContainer = document.getElementById('srs-user-roles');
+    if (!userRolesContainer && sectionsEl) {
+        userRolesContainer = document.createElement('div');
+        userRolesContainer.id = 'srs-user-roles';
+        if (userStoriesContainer) {
+            sectionsEl.parentNode.insertBefore(userRolesContainer, userStoriesContainer.nextSibling);
+        } else {
+            sectionsEl.parentNode.insertBefore(userRolesContainer, sectionsEl.nextSibling);
+        }
+    }
+    if (userRolesContainer) {
+        if (userRoles.length) {
+            const rolesTitle = state.lang === 'ar' ? 'أدوار المستخدمين' : 'User Roles';
+            const permLabel = state.lang === 'ar' ? 'الصلاحيات' : 'Permissions';
+            userRolesContainer.innerHTML = `
+                <article class="srs-section srs-user-roles">
+                    <div class="srs-section-header"><h3>${rolesTitle}</h3></div>
+                    <table class="user-roles-table">
+                        <thead><tr>
+                            <th>${state.lang === 'ar' ? 'الدور' : 'Role'}</th>
+                            <th>${state.lang === 'ar' ? 'الوصف' : 'Description'}</th>
+                            <th>${permLabel}</th>
+                        </tr></thead>
+                        <tbody>
+                            ${userRoles.map(r => `<tr>
+                                <td dir="auto"><strong>${escapeHtml(r.role || '')}</strong></td>
+                                <td dir="auto">${escapeHtml(r.description || '')}</td>
+                                <td dir="auto">${Array.isArray(r.permissions) ? r.permissions.map(p => `<span class="perm-tag">${escapeHtml(p)}</span>`).join(' ') : ''}</td>
+                            </tr>`).join('')}
+                        </tbody>
+                    </table>
+                </article>`;
+        } else {
+            userRolesContainer.innerHTML = '';
+        }
     }
 
     if (questionsEl) {
@@ -1783,11 +2104,125 @@ function renderSrsDraft(content, draftMeta) {
     }
 }
 
+async function renderSrsMermaid(code) {
+    const surface = document.getElementById('srs-mermaid-surface');
+    if (!surface) return;
+
+    const mermaidApi = globalThis.mermaid;
+    if (!mermaidApi || typeof mermaidApi.render !== 'function') {
+        surface.innerHTML = `<div class="srs-mermaid-error">${state.lang === 'ar' ? 'تعذر تحميل مكتبة Mermaid.' : 'Failed to load Mermaid library.'}</div>`;
+        return;
+    }
+
+    try {
+        if (!globalThis.__tawasulMermaidInitialized) {
+            mermaidApi.initialize({ startOnLoad: false, securityLevel: 'loose' });
+            globalThis.__tawasulMermaidInitialized = true;
+        }
+
+        const graphId = `srs-mermaid-${Date.now()}`;
+        const result = await mermaidApi.render(graphId, code);
+        surface.innerHTML = result.svg || '';
+    } catch (error) {
+        console.error('Mermaid render error:', error);
+        surface.innerHTML = `<div class="srs-mermaid-error">${state.lang === 'ar' ? 'فشل رسم مخطط Mermaid. سيتم عرض النسخة النصية.' : 'Failed to render Mermaid diagram. Text flow is shown instead.'}</div>`;
+    }
+}
+
+function createActivityDiagramArticle(diagram, idx, activityTitle, textFlowLabel) {
+    if (!diagram || typeof diagram !== 'object') return '';
+    const title = String(diagram.title || `${activityTitle} ${idx + 1}`).trim();
+    const lines = Array.isArray(diagram.activity_diagram)
+        ? diagram.activity_diagram.map((line) => String(line).trim()).filter(Boolean)
+        : [];
+    const mermaid = typeof diagram.activity_diagram_mermaid === 'string'
+        ? diagram.activity_diagram_mermaid.trim()
+        : '';
+
+    if (!lines.length && !mermaid) return '';
+
+    const fallbackHtml = lines.length
+        ? `
+            <details class="srs-mermaid-fallback">
+                <summary>${textFlowLabel}</summary>
+                <ul class="activity-diagram-list">
+                    ${lines.map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`).join('')}
+                </ul>
+            </details>
+        `
+        : '';
+
+    if (mermaid) {
+        return `
+            <article class="srs-section srs-activity-diagram">
+                <div class="srs-section-header">
+                    <h3>${escapeHtml(title)} (Mermaid)</h3>
+                </div>
+                <div class="srs-mermaid-surface" id="srs-mermaid-surface-${idx}"></div>
+                ${fallbackHtml}
+            </article>
+        `;
+    }
+
+    return `
+        <article class="srs-section srs-activity-diagram">
+            <div class="srs-section-header">
+                <h3>${escapeHtml(title)}</h3>
+            </div>
+            <ul class="activity-diagram-list">
+                ${lines.map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`).join('')}
+            </ul>
+        </article>
+    `;
+}
+
+async function renderAllSrsMermaid(activityDiagrams) {
+    if (!Array.isArray(activityDiagrams) || activityDiagrams.length === 0) return;
+
+    const mermaidApi = globalThis.mermaid;
+    if (!mermaidApi || typeof mermaidApi.render !== 'function') {
+        document.querySelectorAll('[id^="srs-mermaid-surface-"]').forEach((surface) => {
+            surface.innerHTML = `<div class="srs-mermaid-error">${state.lang === 'ar' ? 'تعذر تحميل مكتبة Mermaid.' : 'Failed to load Mermaid library.'}</div>`;
+        });
+        return;
+    }
+
+    try {
+        if (!globalThis.__tawasulMermaidInitialized) {
+            mermaidApi.initialize({ startOnLoad: false, securityLevel: 'loose' });
+            globalThis.__tawasulMermaidInitialized = true;
+        }
+    } catch (error) {
+        console.error('Mermaid init error:', error);
+    }
+
+    for (let idx = 0; idx < activityDiagrams.length; idx += 1) {
+        await renderSingleSrsMermaidByIndex(mermaidApi, activityDiagrams[idx], idx);
+    }
+}
+
+async function renderSingleSrsMermaidByIndex(mermaidApi, diagram, idx) {
+    const code = typeof diagram?.activity_diagram_mermaid === 'string' ? diagram.activity_diagram_mermaid.trim() : '';
+    if (!code) return;
+
+    const surface = document.getElementById(`srs-mermaid-surface-${idx}`);
+    if (!surface) return;
+
+    try {
+        const graphId = `srs-mermaid-${Date.now()}-${idx}`;
+        const result = await mermaidApi.render(graphId, code);
+        surface.innerHTML = result.svg || '';
+    } catch (error) {
+        console.error('Mermaid render error:', error);
+        surface.innerHTML = `<div class="srs-mermaid-error">${state.lang === 'ar' ? 'فشل رسم مخطط Mermaid. سيتم عرض النسخة النصية.' : 'Failed to render Mermaid diagram. Text flow is shown instead.'}</div>`;
+    }
+}
+
 function attachSrsEditHandlers(sectionsEl) {
     sectionsEl.querySelectorAll('.srs-edit-btn').forEach(btn => {
         btn.onclick = (e) => {
             e.stopPropagation();
-            const sectionIdx = parseInt(btn.dataset.idx);
+            const sectionIdx = Number.parseInt(btn.dataset.idx, 10);
             const article = sectionsEl.querySelector(`[data-idx="${sectionIdx}"]`);
             if (!article) return;
             const ul = article.querySelector('ul');
@@ -1795,10 +2230,10 @@ function attachSrsEditHandlers(sectionsEl) {
 
             ul.classList.add('editing');
             const items = ul.querySelectorAll('li');
-            items.forEach(li => {
+            for (const li of items) {
                 li.contentEditable = 'true';
                 li.classList.add('editable');
-            });
+            }
 
             // Change button to save
             btn.innerHTML = `<i class="fas fa-check"></i>`;
@@ -1806,10 +2241,10 @@ function attachSrsEditHandlers(sectionsEl) {
             btn.classList.add('saving');
 
             btn.onclick = () => {
-                items.forEach(li => {
+                for (const li of items) {
                     li.contentEditable = 'false';
                     li.classList.remove('editable');
-                });
+                }
                 ul.classList.remove('editing');
                 btn.innerHTML = `<i class="fas fa-pen"></i>`;
                 btn.title = state.lang === 'ar' ? 'تعديل' : 'Edit';
@@ -1823,34 +2258,218 @@ function attachSrsEditHandlers(sectionsEl) {
     });
 }
 
+function updateExportButtonLabel(format = 'pdf') {
+    const exportLabel = document.querySelector('#srs-export-btn span');
+    if (!exportLabel) return;
+    if (format === 'word') {
+        exportLabel.textContent = i18n[state.lang].srs_export_word;
+    } else if (format === 'markdown') {
+        exportLabel.textContent = i18n[state.lang].srs_export_markdown;
+    } else {
+        exportLabel.textContent = i18n[state.lang].srs_export_pdf;
+    }
+}
+
+function toMarkdownFromSrs(draftContent, draftMeta) {
+    const content = draftContent || {};
+    const lines = [];
+    lines.push(
+        `# ${state.lang === 'ar' ? 'وثيقة متطلبات البرمجيات' : 'Software Requirements Specification'}`,
+        '',
+        `- ${state.lang === 'ar' ? 'المشروع' : 'Project'}: ${draftMeta?.project_id || '-'}`,
+        `- ${state.lang === 'ar' ? 'الإصدار' : 'Version'}: ${draftMeta?.version || 1}`,
+        `- ${state.lang === 'ar' ? 'الحالة' : 'Status'}: ${content.status || 'draft'}`,
+        ''
+    );
+
+    appendSummaryMarkdown(lines, content.summary);
+
+    const sections = Array.isArray(content.sections) ? content.sections : [];
+    sections.forEach((section) => appendMarkdownSection(lines, section));
+
+    const activityDiagram = Array.isArray(content.activity_diagram) ? content.activity_diagram : [];
+    appendMarkdownListBlock(
+        lines,
+        state.lang === 'ar' ? 'مخطط النشاط' : 'Activity Diagram',
+        activityDiagram.map((line) => String(line).replaceAll(/\s*->\s*/g, ' → '))
+    );
+
+    const activityDiagrams = Array.isArray(content.activity_diagrams) ? content.activity_diagrams : [];
+    if (activityDiagrams.length) {
+        activityDiagrams.forEach((diagram, idx) => {
+            const title = String(diagram?.title || (state.lang === 'ar' ? `تدفق نشاط ${idx + 1}` : `Activity Flow ${idx + 1}`)).trim();
+            const flowLines = Array.isArray(diagram?.activity_diagram)
+                ? diagram.activity_diagram.map((line) => String(line).replaceAll(/\s*->\s*/g, ' → '))
+                : [];
+            appendMarkdownListBlock(lines, title, flowLines);
+
+            const mermaidCode = typeof diagram?.activity_diagram_mermaid === 'string'
+                ? diagram.activity_diagram_mermaid.trim()
+                : '';
+            if (mermaidCode) {
+                lines.push(`### ${title} (Mermaid)`, '```mermaid', mermaidCode, '```', '');
+            }
+        });
+    }
+
+    const activityMermaid = typeof content.activity_diagram_mermaid === 'string'
+        ? content.activity_diagram_mermaid.trim()
+        : '';
+    appendMermaidMarkdown(lines, activityMermaid);
+
+    const questions = Array.isArray(content.questions) ? content.questions : [];
+    appendMarkdownListBlock(lines, state.lang === 'ar' ? 'نقاط تحتاج توضيح' : 'Open Questions', questions);
+
+    // User Stories
+    const userStories = Array.isArray(content.user_stories) ? content.user_stories : [];
+    if (userStories.length) {
+        lines.push(`## ${state.lang === 'ar' ? 'قصص المستخدمين ومعايير القبول' : 'User Stories & Acceptance Criteria'}`);
+        userStories.forEach(s => {
+            const asA    = state.lang === 'ar' ? 'بوصفي' : 'As a';
+            const iWant  = state.lang === 'ar' ? 'أريد' : 'I want to';
+            const soThat = state.lang === 'ar' ? 'حتى أتمكن من' : 'so that';
+            lines.push(`- **${asA}** ${s.role || ''}, **${iWant}** ${s.action || ''}, **${soThat}** ${s.goal || ''}`);
+            (s.acceptance_criteria || []).forEach(ac => lines.push(`  - ✓ ${ac}`));
+        });
+        lines.push('');
+    }
+
+    // User Roles
+    const userRoles = Array.isArray(content.user_roles) ? content.user_roles : [];
+    if (userRoles.length) {
+        lines.push(`## ${state.lang === 'ar' ? 'أدوار المستخدمين' : 'User Roles'}`);
+        userRoles.forEach(r => {
+            const perms = Array.isArray(r.permissions) && r.permissions.length
+                ? ` — ${r.permissions.join(', ')}`
+                : '';
+            lines.push(`- **${r.role || ''}**: ${r.description || ''}${perms}`);
+        });
+        lines.push('');
+    }
+
+    const nextSteps = Array.isArray(content.nextSteps || content.next_steps) ? (content.nextSteps || content.next_steps) : [];
+    appendMarkdownListBlock(lines, state.lang === 'ar' ? 'الخطوات القادمة' : 'Next Steps', nextSteps);
+
+    lines.push('---', 'Generated intelligently by Tawasul AI');
+    return lines.join('\n');
+}
+
+function appendMarkdownSection(lines, section) {
+    const title = section?.title || (state.lang === 'ar' ? 'قسم' : 'Section');
+    const confidence = section?.confidence ? ` (${section.confidence})` : '';
+    const items = Array.isArray(section?.items) ? section.items : [];
+    appendMarkdownListBlock(lines, `${title}${confidence}`, items);
+}
+
+function appendSummaryMarkdown(lines, summary) {
+    if (!summary) return;
+    lines.push(`## ${state.lang === 'ar' ? 'الملخص' : 'Summary'}`, String(summary), '');
+}
+
+function appendMermaidMarkdown(lines, mermaidCode) {
+    if (!mermaidCode) return;
+    lines.push('```mermaid', mermaidCode, '```', '');
+}
+
+function appendMarkdownListBlock(lines, heading, items) {
+    if (!items.length) return;
+    lines.push(`## ${heading}`);
+    items.forEach((item) => lines.push(`- ${item}`));
+    lines.push('');
+}
+
+function downloadTextBlob(filename, mimeType, text) {
+    const blob = new Blob([text], { type: mimeType });
+    const url = globalThis.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    globalThis.URL.revokeObjectURL(url);
+}
+
+async function exportSrsDocument(projectId, format = 'pdf') {
+    if (format === 'pdf') {
+        await downloadSrsPdf(projectId);
+        return;
+    }
+
+    const draftBundle = state.lastRenderedSrsDraft;
+    if (!draftBundle?.content) {
+        showNotification(state.lang === 'ar' ? 'حدّث المسودة أولاً ثم أعد التصدير.' : 'Refresh draft first, then export again.', 'warning');
+        return;
+    }
+
+    const markdown = toMarkdownFromSrs(draftBundle.content, draftBundle.meta || {});
+    if (format === 'word') {
+        const mermaidCode = typeof draftBundle?.content?.activity_diagram_mermaid === 'string'
+            ? draftBundle.content.activity_diagram_mermaid.trim()
+            : '';
+        const mermaidSvg = mermaidCode ? await renderMermaidForExport(mermaidCode) : '';
+        const mermaidTitle = state.lang === 'ar' ? 'مخطط النشاط (Mermaid)' : 'Activity Diagram (Mermaid)';
+        const mermaidBody = mermaidSvg ? `<div>${mermaidSvg}</div>` : `<pre>${escapeHtml(mermaidCode)}</pre>`;
+        const mermaidBlock = mermaidCode
+            ? `
+                <h3>${escapeHtml(mermaidTitle)}</h3>
+                ${mermaidBody}
+            `
+            : '';
+
+        const htmlDoc = `<!doctype html><html><head><meta charset="utf-8"></head><body>${mermaidBlock}<pre>${escapeHtml(markdown)}</pre><p>Generated intelligently by Tawasul AI</p></body></html>`;
+        downloadTextBlob(`srs_project_${projectId}.doc`, 'application/msword', htmlDoc);
+        return;
+    }
+    downloadTextBlob(`srs_project_${projectId}.md`, 'text/markdown;charset=utf-8', markdown);
+}
+
+async function renderMermaidForExport(code) {
+    const mermaidApi = globalThis.mermaid;
+    if (!mermaidApi || typeof mermaidApi.render !== 'function') {
+        return '';
+    }
+
+    try {
+        if (!globalThis.__tawasulMermaidInitialized) {
+            mermaidApi.initialize({ startOnLoad: false, securityLevel: 'loose' });
+            globalThis.__tawasulMermaidInitialized = true;
+        }
+        const graphId = `srs-export-mermaid-${Date.now()}`;
+        const result = await mermaidApi.render(graphId, code);
+        return result?.svg || '';
+    } catch (error) {
+        console.error('Mermaid export render error:', error);
+        return '';
+    }
+}
+
 async function downloadSrsPdf(projectId) {
     try {
         const response = await fetch(`${API_BASE_URL}/projects/${projectId}/srs/export`, {
             headers: authHeaders()
         });
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
+        await throwIfNotOk(response);
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
+        const url = globalThis.URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         link.download = `srs_project_${projectId}.pdf`;
         document.body.appendChild(link);
         link.click();
         link.remove();
-        window.URL.revokeObjectURL(url);
+        globalThis.URL.revokeObjectURL(url);
     } catch (error) {
         console.error('SRS Export Error:', error);
         showNotification(state.lang === 'ar' ? 'تعذر تصدير SRS' : 'Failed to export SRS', 'error');
     }
 }
 
-async function logChatMessages(projectId, userText, assistantText, sources) {
+async function logChatMessages(projectId, userText, assistantText, sources, userMetadata = null) {
     try {
         await api.post(`/projects/${projectId}/messages`, {
             messages: [
-                { role: 'user', content: userText },
+                { role: 'user', content: userText, metadata: userMetadata || undefined },
                 { role: 'assistant', content: assistantText, metadata: { sources: sources || [] } }
             ]
         });
@@ -1880,18 +2499,104 @@ async function refreshLivePatchPanel(projectId, language) {
 
         const liveDocPanel = document.getElementById('live-doc-panel');
         if (liveDocPanel) {
-            liveDocPanel.style.display = 'flex';
+            applySummaryDrawerState();
         }
 
         updateLiveDoc(patchResult.summary, patchResult.stage || 'discovery');
     } catch (error) {
         console.error('Live Patch Refresh Error:', error);
+        showNotification(error?.message || (state.lang === 'ar' ? 'تعذر تحديث لوحة التقدم' : 'Failed to refresh live patch'), 'warning');
     }
+}
+
+function getProjectNameById(projectId) {
+    const project = (state.projects || []).find((item) => Number(item.id) === Number(projectId));
+    return project?.name || '';
+}
+
+function updateChatProjectHeader(projectId) {
+    const titleEl = document.getElementById('chat-project-title');
+    if (!titleEl) return;
+
+    const projectName = projectId ? getProjectNameById(projectId) : '';
+    const fallback = state.lang === 'ar' ? 'المشروع: -' : 'Project: -';
+    const projectLabel = state.lang === 'ar' ? `المشروع: ${projectName}` : `Project: ${projectName}`;
+    titleEl.textContent = projectName
+        ? projectLabel
+        : fallback;
+}
+
+function applySummaryDrawerState() {
+    const panel = document.getElementById('live-doc-panel');
+    const summaryBtn = document.getElementById('summary-toggle-btn');
+    if (!panel) return;
+
+    const shouldShow = state.interviewMode && !state.summaryCollapsed;
+    panel.classList.toggle('is-collapsed', !shouldShow);
+    panel.style.display = shouldShow ? 'flex' : 'none';
+
+    if (summaryBtn) {
+        summaryBtn.classList.toggle('active', shouldShow);
+        summaryBtn.setAttribute('aria-expanded', shouldShow ? 'true' : 'false');
+    }
+}
+
+function getInterviewStarterPrompts(projectId) {
+    const projectName = getProjectNameById(projectId);
+    if (state.lang === 'ar') {
+        return [
+            `ما المشكلة الأساسية التي يحلها ${projectName || 'المشروع'}؟`,
+            `مين المستخدمين الأساسيين في ${projectName || 'المشروع'} وإيه أولوياتهم؟`,
+            `ما أهم 3 متطلبات MVP والقيود الزمنية/الميزانية؟`
+        ];
+    }
+
+    return [
+        `What core problem does ${projectName || 'this project'} solve?`,
+        `Who are the primary users of ${projectName || 'this project'} and what matters most to them?`,
+        'What are the top 3 MVP requirements and timeline/budget constraints?'
+    ];
+}
+
+function getChatWelcomeMarkup(projectId) {
+    const prompts = getInterviewStarterPrompts(projectId);
+    const title = state.lang === 'ar'
+        ? 'لنبدأ اكتشاف المتطلبات'
+        : 'Let’s start requirements discovery';
+    const subtitle = state.lang === 'ar'
+        ? 'اكتب تفاصيل مشروعك، وسأطرح أسئلة مرتبطة مباشرة لبناء SRS احترافي.'
+        : 'Share your project details and I will ask focused questions to build a professional SRS.';
+
+    return `
+        <div class="welcome-msg-pro">
+            <div class="welcome-icon">
+                <i class="fas fa-robot"></i>
+            </div>
+            <h2>${title}</h2>
+            <p>${subtitle}</p>
+            <div class="welcome-suggestions">
+                ${prompts.map((prompt) => `<button class="suggestion-chip">${escapeHtml(prompt)}</button>`).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function bindSuggestionChips() {
+    const chatInput = document.getElementById('chat-input');
+    if (!chatInput) return;
+    document.querySelectorAll('.suggestion-chip').forEach((chip) => {
+        chip.onclick = () => {
+            chatInput.value = chip.textContent;
+            chatInput.dispatchEvent(new Event('input', { bubbles: true }));
+            chatInput.focus();
+        };
+    });
 }
 
 async function loadChatHistory(projectId) {
     const messagesContainer = document.getElementById('chat-messages');
     if (!messagesContainer) return;
+    updateChatProjectHeader(projectId);
 
     // Show loading state
     messagesContainer.innerHTML = `
@@ -1904,22 +2609,15 @@ async function loadChatHistory(projectId) {
     `;
 
     try {
-        const messages = await api.get(`/projects/${projectId}/messages`);
+        const messages = await api.get(`/projects/${projectId}/messages?limit=120`);
 
         // Clear container
         messagesContainer.innerHTML = '';
 
         if (!messages || messages.length === 0) {
             // Show welcome message if no history
-            messagesContainer.innerHTML = `
-                <div class="welcome-msg-pro">
-                    <div class="welcome-icon">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
-                    <p>${state.lang === 'ar' ? 'ابدأ في طرح الأسئلة حول مشروعك.' : 'Start asking questions about your project.'}</p>
-                </div>
-            `;
+            messagesContainer.innerHTML = getChatWelcomeMarkup(projectId);
+            bindSuggestionChips();
             await refreshInterviewTelemetry(projectId);
             updateInterviewAssistBar(state.lastCoverage);
             return;
@@ -1939,7 +2637,7 @@ async function loadChatHistory(projectId) {
                 }
 
                 // Render sources if available in metadata
-                if (msg.metadata && msg.metadata.sources && msg.metadata.sources.length > 0) {
+                if (msg.metadata?.sources?.length > 0) {
                     const msgDiv = document.getElementById(`msg-${id}`);
                     const sourcesDiv = document.createElement('div');
                     sourcesDiv.className = 'msg-sources-pro';
@@ -1974,15 +2672,9 @@ async function loadChatHistory(projectId) {
         updateInterviewAssistBar(state.lastCoverage);
     } catch (error) {
         console.error('Load Chat History Error:', error);
-        messagesContainer.innerHTML = `
-            <div class="welcome-msg-pro">
-                <div class="welcome-icon">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <h2>${state.lang === 'ar' ? 'كيف يمكنني مساعدتك اليوم؟' : 'How can I help you today?'}</h2>
-                <p>${state.lang === 'ar' ? 'ابدأ في طرح الأسئلة حول مشروعك.' : 'Start asking questions about your project.'}</p>
-            </div>
-        `;
+        showNotification(error?.message || (state.lang === 'ar' ? 'تعذر تحميل المحادثة' : 'Failed to load conversation'), 'error');
+        messagesContainer.innerHTML = getChatWelcomeMarkup(projectId);
+        bindSuggestionChips();
     }
 }
 
@@ -1990,24 +2682,59 @@ function createProjectCard(project) {
     const card = document.createElement('div');
     card.className = 'project-card';
     const docCount = project.document_count || 0;
+    const progressInfo = getProjectProgressInfo(project);
     card.innerHTML = `
         <h3>${escapeHtml(project.name)}</h3>
-        <p>${escapeHtml(project.description || (state.lang === 'ar' ? 'لا يوجد وصف' : 'No description'))}</p>
+        <p>${escapeHtml(project.description || i18n[state.lang].project_goal_hint)}</p>
+        <div class="project-progress-wrap" title="${escapeHtml(progressInfo.label)}">
+            <div class="project-progress-head">
+                <span>${escapeHtml(progressInfo.label)}</span>
+                <strong>${Math.round(progressInfo.progress)}%</strong>
+            </div>
+            <div class="project-progress-track">
+                <div class="project-progress-fill" style="width: ${Math.round(progressInfo.progress)}%"></div>
+            </div>
+        </div>
         <div class="project-card-footer">
             <span class="project-card-date"><i class="far fa-calendar"></i> ${new Date(project.created_at).toLocaleDateString(state.lang === 'ar' ? 'ar-EG' : 'en-US')}</span>
             <div class="project-card-actions">
                 <span class="doc-count-badge"><i class="fas fa-file-alt"></i> ${docCount}</span>
-                <button class="delete-project-btn" data-id="${project.id}"><i class="fas fa-trash"></i></button>
+                <button class="delete-project-btn icon-btn" style="width: 30px; height: 30px; color: var(--error);" data-id="${project.id}" title="${state.lang === 'ar' ? 'حذف المشروع' : 'Delete Project'}">
+                    <i class="fas fa-trash-alt"></i>
+                </button>
             </div>
+        </div>
+        <div class="project-card-quick-actions">
+            <button class="btn btn-primary btn-sm project-interview-btn">
+                <i class="fas fa-comments"></i>
+                <span>${state.lang === 'ar' ? 'مقابلة' : 'Interview'}</span>
+            </button>
+            <button class="btn btn-outline btn-sm project-srs-btn">
+                <i class="fas fa-file-signature"></i>
+                <span>${state.lang === 'ar' ? 'عرض المتطلبات' : 'View SRS'}</span>
+            </button>
         </div>
     `;
 
     card.onclick = (e) => {
         if (e.target.closest('.delete-project-btn')) {
-            handleDeleteProject(project.id);
+            e.stopPropagation();
+            handleDeleteProject(project.id, project.name);
             return;
         }
-        // Interview-first: default to interview mode when opening any project
+
+        if (e.target.closest('.project-interview-btn')) {
+            state.interviewMode = true;
+            state.pendingProjectSelect = project.id;
+            switchView('chat');
+            return;
+        }
+        if (e.target.closest('.project-srs-btn')) {
+            state.pendingProjectSelect = project.id;
+            switchView('srs');
+            return;
+        }
+        // Default card click: open interview
         state.interviewMode = true;
         state.pendingProjectSelect = project.id;
         switchView('chat');
@@ -2019,17 +2746,26 @@ function createProjectCard(project) {
 function createDocItem(doc) {
     const item = document.createElement('div');
     item.className = 'doc-item';
-    const statusClass = doc.status === 'completed' ? 'status-done' : (doc.status === 'failed' ? 'status-error' : 'status-processing');
-    const statusIcon = doc.status === 'completed' ? 'fa-check-circle' : (doc.status === 'failed' ? 'fa-exclamation-circle' : 'fa-spinner fa-spin');
+    let statusClass = 'status-processing';
+    let statusIcon = 'fa-spinner fa-spin';
+    if (doc.status === 'completed') {
+        statusClass = 'status-done';
+        statusIcon = 'fa-check-circle';
+    } else if (doc.status === 'failed') {
+        statusClass = 'status-error';
+        statusIcon = 'fa-exclamation-circle';
+    }
     const meta = doc.extra_metadata || {};
     const totalChunks = Number.isFinite(meta.total_chunks) ? meta.total_chunks : null;
     const processedChunks = Number.isFinite(meta.processed_chunks) ? meta.processed_chunks : null;
     const progressValue = Number.isFinite(meta.progress) ? meta.progress : null;
-    const stageLabel = getStageLabel(meta.stage);
     const showProgress = doc.status === 'processing' && totalChunks && totalChunks > 0;
-    const progressPercent = progressValue != null
-        ? Math.max(0, Math.min(100, progressValue))
-        : Math.round((processedChunks || 0) / totalChunks * 100);
+    let progressPercent;
+    if (progressValue == null) {
+        progressPercent = Math.round((processedChunks || 0) / totalChunks * 100);
+    } else {
+        progressPercent = Math.max(0, Math.min(100, progressValue));
+    }
 
     const statusText = {
         completed: state.lang === 'ar' ? 'مكتمل' : 'Completed',
@@ -2053,7 +2789,6 @@ function createDocItem(doc) {
             <div class="doc-progress">
                 <div class="doc-progress-header">
                     <span>${i18n[state.lang].processing_label}</span>
-                    <span>${stageLabel}</span>
                     <span>${processedChunks || 0}/${totalChunks}</span>
                 </div>
                 <div class="doc-progress-track">
@@ -2061,10 +2796,7 @@ function createDocItem(doc) {
                 </div>
             </div>
         ` : ''}
-        <button class="delete-doc-btn" data-id="${doc.id}"><i class="fas fa-trash"></i></button>
     `;
-
-    item.querySelector('.delete-doc-btn').onclick = () => handleDeleteDoc(doc.id);
 
     return item;
 }
@@ -2075,7 +2807,13 @@ function renderDocsList(docs) {
     docsList.innerHTML = '';
 
     if (docs.length === 0) {
-        docsList.innerHTML = createEmptyState('fa-file-circle-plus', 'empty_docs', 'empty_docs_desc');
+        docsList.innerHTML = `
+            <div class="empty-state" style="padding: 24px 0;">
+                <div class="empty-state-icon"><i class="fas fa-file-circle-plus"></i></div>
+                <h3>${state.lang === 'ar' ? 'لا توجد ملفات بعد' : 'No files yet'}</h3>
+                <p>${state.lang === 'ar' ? 'ارفع مستند نص المقابلة أو ملف مرجعي لمساعدة الذكاء الاصطناعي' : 'Upload an interview transcript or reference document to help the AI'}</p>
+            </div>
+        `;
         return;
     }
 
@@ -2086,16 +2824,20 @@ function renderDocsList(docs) {
 
 function startDocPolling(projectId, docs) {
     if (state.docPoller) {
-        clearInterval(state.docPoller);
+        clearTimeout(state.docPoller);
         state.docPoller = null;
     }
 
     const hasProcessing = docs.some(doc => doc.status === 'processing');
     if (!hasProcessing) return;
 
-    state.docPoller = setInterval(async () => {
-        if (state.currentView !== 'projectDetail') {
-            clearInterval(state.docPoller);
+    const baseDelayMs = 10000;
+    const maxDelayMs = 60000;
+    let attempt = 0;
+
+    const pollOnce = async () => {
+        if (state.currentView !== 'chat') {
+            clearTimeout(state.docPoller);
             state.docPoller = null;
             return;
         }
@@ -2105,23 +2847,21 @@ function startDocPolling(projectId, docs) {
             renderDocsList(updated);
             const stillProcessing = updated.some(doc => doc.status === 'processing');
             if (!stillProcessing) {
-                clearInterval(state.docPoller);
+                clearTimeout(state.docPoller);
                 state.docPoller = null;
+                return;
             }
+            attempt += 1;
         } catch (error) {
             console.error('Docs Poll Error:', error);
+            attempt += 1;
         }
-    }, 3000);
-}
 
-function getStageLabel(stage) {
-    if (!stage) return '';
-    const map = {
-        chunking: i18n[state.lang].stage_chunking,
-        embedding: i18n[state.lang].stage_embedding,
-        indexing: i18n[state.lang].stage_indexing
+        const nextDelay = Math.min(baseDelayMs * (2 ** attempt), maxDelayMs);
+        state.docPoller = setTimeout(pollOnce, nextDelay);
     };
-    return map[stage] || stage;
+
+    state.docPoller = setTimeout(pollOnce, baseDelayMs);
 }
 
 const _activeToasts = [];
@@ -2195,6 +2935,11 @@ function applyTranslations() {
     const searchInput = document.querySelector('.search-bar input');
     if (searchInput) searchInput.placeholder = t.search_placeholder;
 
+    const exportFormat = document.getElementById('srs-export-format');
+    if (exportFormat) {
+        updateExportButtonLabel(exportFormat.value || 'pdf');
+    }
+
     // Update back button icon direction
     const backBtn = document.getElementById('back-to-projects');
     if (backBtn) {
@@ -2226,11 +2971,15 @@ function toggleLang() {
 async function switchView(viewName, params = null) {
     if (ADMIN_ONLY_VIEWS.has(viewName) && !isAdminUser()) {
         showNotification(state.lang === 'ar' ? 'هذه الصفحة متاحة للمسؤول فقط' : 'This page is admin-only', 'warning');
-        viewName = 'dashboard';
+        viewName = 'projects';
+    }
+
+    if (!views[viewName]) {
+        viewName = 'projects';
     }
 
     if (state.docPoller) {
-        clearInterval(state.docPoller);
+        clearTimeout(state.docPoller);
         state.docPoller = null;
     }
     state.currentView = viewName;
@@ -2241,15 +2990,15 @@ async function switchView(viewName, params = null) {
     });
 
     // Render View
-    if (viewName === 'projectDetail') {
-        await views.projectDetail(params);
-    } else if (views[viewName]) {
+    if (views[viewName]) {
         await views[viewName]();
     }
 }
 
-async function handleNewProject() {
+async function handleNewProject(defaultTemplateId = '') {
     const t = i18n[state.lang];
+    const langKey = state.lang === 'ar' ? 'ar' : 'en';
+
     elements.modalTitle.textContent = t.start_idea_title;
     elements.modalBody.innerHTML = `
         <div class="form-group">
@@ -2268,10 +3017,26 @@ async function handleNewProject() {
 
     elements.modalOverlay.classList.remove('hidden');
 
+    const descInput = document.getElementById('new-project-desc');
+    const nameInput = document.getElementById('new-project-name');
+
+    if (defaultTemplateId && IDEA_TEMPLATES[defaultTemplateId]) {
+        const info = IDEA_TEMPLATES[defaultTemplateId][langKey];
+        if (!descInput.value.trim()) {
+            descInput.value = info.description;
+        }
+        if (!nameInput.value.trim()) {
+            nameInput.value = info.title;
+        }
+    }
+
     document.getElementById('save-project-btn').onclick = async () => {
-        const nameInput = document.getElementById('new-project-name');
         const name = nameInput.value;
-        const description = document.getElementById('new-project-desc').value;
+        const descriptionBase = document.getElementById('new-project-desc').value;
+        const templatePrompt = defaultTemplateId && IDEA_TEMPLATES[defaultTemplateId]
+            ? IDEA_TEMPLATES[defaultTemplateId][langKey].prompt
+            : '';
+        const description = [descriptionBase, templatePrompt].filter(Boolean).join('\n\n');
 
         if (!name) {
             showFieldError(nameInput, i18n[state.lang].validation_project_name);
@@ -2303,231 +3068,309 @@ async function handleNewProject() {
     };
 
     // Setup field validation on project name input
-    const nameInput = document.getElementById('new-project-name');
     if (nameInput) {
         nameInput.addEventListener('input', () => clearFieldError(nameInput));
     }
 }
 
-async function handleDeleteProject(id) {
-    const confirmed = await showConfirmDialog(i18n[state.lang].delete_confirm);
-    if (confirmed) {
-        try {
-            await api.delete(`/projects/${id}`);
-            showNotification(i18n[state.lang].success_saved, 'success');
-            switchView(state.currentView);
-        } catch (error) {
-            console.error('Delete Project Error:', error);
-        }
-    }
-}
+async function handleDeleteProject(id, projectName = '') {
+    const isAr = state.lang === 'ar';
+    const safeName = String(projectName || '').trim();
+    const confirmMsg = isAr
+        ? `هل أنت متأكد من حذف مشروع "${safeName || id}" وكل محتوياته (بما فيها المحادثات والمستندات)؟`
+        : `Are you sure you want to delete project "${safeName || id}" and all its contents?`;
 
-async function handleDeleteDoc(id) {
-    const confirmed = await showConfirmDialog(i18n[state.lang].delete_confirm);
-    if (confirmed) {
-        try {
-            await api.delete(`/documents/${id}`);
-            showNotification(i18n[state.lang].success_saved, 'success');
-            if (state.selectedProject) {
-                switchView('projectDetail', state.selectedProject.id);
-            }
-        } catch (error) {
-            console.error('Delete Doc Error:', error);
-        }
+    const confirmed = await showConfirmDialog(confirmMsg);
+    if (!confirmed) return;
+
+    showLoader();
+    try {
+        await api.delete(`/projects/${id}`);
+        showNotification(isAr ? 'تم حذف المشروع بنجاح' : 'Project deleted successfully', 'success');
+        await views.projects();
+    } catch (error) {
+        console.error('Delete Project Error:', error);
+        showNotification(error.message || (isAr ? 'حدث خطأ أثناء الحذف' : 'Error deleting project'), 'error');
+    } finally {
+        hideLoader();
     }
 }
 
 async function handleChatSubmit() {
     const input = document.getElementById('chat-input');
     const projectSelect = document.getElementById('chat-project-select');
-    const langSelect = document.getElementById('chat-lang');
     const sendBtn = document.getElementById('send-btn');
 
     const query = input.value.trim();
     const projectId = projectSelect.value;
-    const language = langSelect.value;
+    const language = detectMessageLanguage(query, state.lang);
 
     if (!query) return;
-    if (state.interviewMode && normalizeInterviewText(query) === normalizeInterviewText(state.lastUserInterviewAnswer)) {
-        showNotification(i18n[state.lang].interview_duplicate_guard, 'warning');
-        return;
-    }
-    if (!projectId) {
-        showNotification(state.lang === 'ar' ? 'يرجى اختيار مشروع أولاً' : 'Select a project first', 'warning');
+
+    const validationError = getChatSubmitValidationError(query, projectId);
+    if (validationError) {
+        showNotification(validationError, 'warning');
         return;
     }
 
+    const pendingSttMetadata = state.pendingSttMeta || null;
+    state.pendingSttMeta = null;
+
     addChatMessage('user', query);
-    input.value = '';
-    input.style.height = 'auto';
-    sendBtn.disabled = true;
+    resetChatInputUi(input, sendBtn);
 
     const thinkingId = addChatMessage('bot', '', true);
 
     if (state.interviewMode) {
-        try {
-            state.lastUserInterviewAnswer = query;
-            const userMessageMetadata = state.pendingInterviewSelectionMeta || undefined;
-            state.pendingInterviewSelectionMeta = null;
-            await api.post(`/projects/${projectId}/messages`, {
-                messages: [{ role: 'user', content: query, metadata: userMessageMetadata }]
-            });
-
-            const interviewPayload = { language };
-            if (state.previousSummary) {
-                interviewPayload.last_summary = state.previousSummary;
-            }
-            if (state.lastCoverage) {
-                interviewPayload.last_coverage = state.lastCoverage;
-            }
-
-            const next = await api.post(`/projects/${projectId}/interview/next`, interviewPayload);
-            await refreshInterviewTelemetry(projectId);
-
-            const questionText = next.question || (state.lang === 'ar'
-                ? 'هل يمكن توضيح النقطة الأخيرة بمثال؟'
-                : 'Could you clarify the last point with an example?');
-
-            let finalQuestionText = questionText;
-            if (normalizeInterviewText(questionText) === normalizeInterviewText(state.lastAssistantQuestion)) {
-                finalQuestionText = state.lang === 'ar'
-                    ? 'بدلاً من تكرار السؤال، اذكر تفصيلة جديدة عن الأولويات أو القيود.'
-                    : 'Instead of repeating, share one new detail about priorities or constraints.';
-            }
-            state.lastAssistantQuestion = finalQuestionText;
-            finalizeBotMessage(thinkingId, finalQuestionText, null);
-
-            // Store coverage for next request
-            if (next.coverage) {
-                state.lastCoverage = next.coverage;
-            }
-            state.lastInterviewSignals = next.signals || null;
-            state.lastLivePatch = next.live_patch || null;
-            state.lastCycleTrace = next.cycle_trace || null;
-            state.lastTopicNavigation = next.topic_navigation || null;
-            state.interviewStage = next.stage || state.interviewStage;
-            updateInterviewProgress(next.coverage, next.done, next.topic_navigation);
-            updateInterviewAssistBar(next.coverage, next.signals, next.live_patch);
-            if (next.summary) {
-                updateLiveDoc(next.summary, next.stage);
-            }
-
-            const warningText = Array.isArray(next?.live_patch?.warnings) ? next.live_patch.warnings[0] : '';
-            if (warningText) {
-                showNotification(warningText, 'warning');
-            }
-
-            attachInterviewSelectToMessage(
-                thinkingId,
-                next.suggested_answers || [],
-                finalQuestionText,
-                next.stage || state.interviewStage
-            );
-            await saveInterviewDraft(Number.parseInt(projectId, 10));
-
-            await api.post(`/projects/${projectId}/messages`, {
-                messages: [{ role: 'assistant', content: finalQuestionText, metadata: { stage: next.stage || '' } }]
-            });
-
-            if (next.done) {
-                showNotification(i18n[state.lang].interview_completed, 'success');
-                await openInterviewReviewModal(Number.parseInt(projectId, 10), language, next);
-            }
-        } catch (error) {
-            console.error('Interview Error:', error);
-            const msg = state.lang === 'ar' ? 'تعذر إكمال المقابلة الآن' : 'Interview failed. Try again.';
-            finalizeBotMessage(thinkingId, msg, null);
-        }
+        await handleInterviewTurn({
+            projectId,
+            query,
+            language,
+            thinkingId,
+            pendingSttMetadata,
+        });
         return;
     }
 
     try {
-        const payload = { query, language };
-
-        // ── Stream via SSE (fetch + ReadableStream) ──
-        const response = await fetch(`${API_BASE_URL}/projects/${projectId}/query/stream`, {
-            method: 'POST',
-            headers: authHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let fullAnswer = '';
-        let sources = null;
-
-        // Remove typing indicator as soon as first token arrives
-        let indicatorRemoved = false;
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop(); // keep incomplete line in buffer
-
-            for (const line of lines) {
-                if (!line.startsWith('data: ')) continue;
-                const dataStr = line.slice(6).trim();
-                if (dataStr === '[DONE]') continue;
-
-                try {
-                    const evt = JSON.parse(dataStr);
-
-                    if (evt.type === 'sources') {
-                        sources = evt.sources;
-                    } else if (evt.type === 'token') {
-                        if (!indicatorRemoved) {
-                            const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
-                            if (ind) ind.remove();
-                            indicatorRemoved = true;
-                        }
-                        fullAnswer += evt.token;
-                        // Live-render the accumulated text
-                        const textEl = document.querySelector(`#msg-${thinkingId} .msg-text`);
-                        if (textEl) {
-                            textEl.classList.add('streaming');
-                            textEl.innerHTML = formatAnswerHtml(fullAnswer) || escapeHtml(fullAnswer);
-                            textEl.dir = detectTextDirection(fullAnswer);
-                        }
-                        // Auto-scroll
-                        const container = document.getElementById('chat-messages');
-                        container.scrollTop = container.scrollHeight;
-                    } else if (evt.type === 'error') {
-                        fullAnswer = evt.message || i18n[state.lang].error_generic;
-                    }
-                } catch (_) { /* skip malformed JSON */ }
-            }
-        }
-
-        // Finalize: attach sources + copy button
-        finalizeBotMessage(thinkingId, fullAnswer, sources);
-        await logChatMessages(projectId, query, fullAnswer, sources);
-        await refreshLivePatchPanel(projectId, language);
+        const streamResult = await streamProjectQuery(projectId, query, language, thinkingId);
+        await finalizeQueryResult(projectId, query, language, thinkingId, streamResult, pendingSttMetadata);
 
     } catch (error) {
-        // Fallback: try non-streaming endpoint
         console.warn('Stream failed, falling back to non-streaming:', error.message);
-        try {
-            const payload = { query, language };
-            const result = await api.post(`/projects/${projectId}/query`, payload);
-            // Remove indicator
-            const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
-            if (ind) ind.remove();
-            finalizeBotMessage(thinkingId, result.answer, result.sources);
-            await logChatMessages(projectId, query, result.answer, result.sources);
-            await refreshLivePatchPanel(projectId, language);
-        } catch (fallbackErr) {
-            const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
-            if (ind) ind.remove();
-            finalizeBotMessage(thinkingId, i18n[state.lang].error_generic, null);
+        await handleQueryFallback(projectId, query, language, thinkingId, pendingSttMetadata);
+    }
+}
+
+function detectMessageLanguage(text, fallback = 'ar') {
+    const value = String(text || '');
+    const arabicCount = (value.match(/[\u0600-\u06FF]/g) || []).length;
+    const latinCount = (value.match(/[A-Za-z]/g) || []).length;
+
+    if (arabicCount === 0 && latinCount === 0) {
+        return fallback === 'en' ? 'en' : 'ar';
+    }
+
+    return arabicCount >= latinCount ? 'ar' : 'en';
+}
+
+function getChatSubmitValidationError(query, projectId) {
+    if (!query) return null;
+    if (state.interviewMode && normalizeInterviewText(query) === normalizeInterviewText(state.lastUserInterviewAnswer)) {
+        return i18n[state.lang].interview_duplicate_guard;
+    }
+    if (!projectId) {
+        return state.lang === 'ar' ? 'يرجى اختيار مشروع أولاً' : 'Select a project first';
+    }
+    return null;
+}
+
+function resetChatInputUi(input, sendBtn) {
+    input.value = '';
+    input.style.height = 'auto';
+    sendBtn.disabled = true;
+}
+
+async function streamProjectQuery(projectId, query, language, thinkingId) {
+    const payload = { query, language };
+    const response = await fetch(`${API_BASE_URL}/projects/${projectId}/query/stream`, {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify(payload),
+    });
+    await throwIfNotOk(response);
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const streamState = {
+        buffer: '',
+        fullAnswer: '',
+        sources: null,
+        indicatorRemoved: false,
+    };
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        consumeStreamChunk(streamState, decoder.decode(value, { stream: true }), thinkingId);
+    }
+
+    return {
+        answer: streamState.fullAnswer,
+        sources: streamState.sources,
+    };
+}
+
+function consumeStreamChunk(streamState, chunk, thinkingId) {
+    streamState.buffer += chunk;
+    const lines = streamState.buffer.split('\n');
+    streamState.buffer = lines.pop();
+
+    for (const line of lines) {
+        processStreamLine(streamState, line, thinkingId);
+    }
+}
+
+function processStreamLine(streamState, line, thinkingId) {
+    if (!line.startsWith('data: ')) return;
+    const dataStr = line.slice(6).trim();
+    if (dataStr === '[DONE]') return;
+
+    try {
+        const evt = JSON.parse(dataStr);
+        applyStreamEvent(streamState, evt, thinkingId);
+    } catch (error_) {
+        console.warn('Malformed stream event ignored.', error_);
+    }
+}
+
+function applyStreamEvent(streamState, evt, thinkingId) {
+    if (evt.type === 'sources') {
+        streamState.sources = evt.sources;
+        return;
+    }
+    if (evt.type === 'token') {
+        removeThinkingIndicatorOnce(streamState, thinkingId);
+        streamState.fullAnswer += evt.token;
+        renderStreamingAnswer(thinkingId, streamState.fullAnswer);
+        return;
+    }
+    if (evt.type === 'error') {
+        streamState.fullAnswer = evt.message || i18n[state.lang].error_generic;
+    }
+}
+
+function removeThinkingIndicatorOnce(streamState, thinkingId) {
+    if (streamState.indicatorRemoved) return;
+    const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
+    if (ind) ind.remove();
+    streamState.indicatorRemoved = true;
+}
+
+function renderStreamingAnswer(thinkingId, fullAnswer) {
+    const textEl = document.querySelector(`#msg-${thinkingId} .msg-text`);
+    if (textEl) {
+        textEl.classList.add('streaming');
+        textEl.innerHTML = formatAnswerHtml(fullAnswer) || escapeHtml(fullAnswer);
+        textEl.dir = detectTextDirection(fullAnswer);
+    }
+    const container = document.getElementById('chat-messages');
+    if (container) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+async function finalizeQueryResult(projectId, query, language, thinkingId, result, pendingSttMetadata) {
+    finalizeBotMessage(thinkingId, result.answer, result.sources);
+    await logChatMessages(projectId, query, result.answer, result.sources, pendingSttMetadata);
+    await refreshLivePatchPanel(projectId, language);
+}
+
+async function handleQueryFallback(projectId, query, language, thinkingId, pendingSttMetadata) {
+    try {
+        const payload = { query, language };
+        const result = await api.post(`/projects/${projectId}/query`, payload);
+        removeThinkingIndicator(thinkingId);
+        await finalizeQueryResult(projectId, query, language, thinkingId, { answer: result.answer, sources: result.sources }, pendingSttMetadata);
+    } catch (error_) {
+        removeThinkingIndicator(thinkingId);
+        console.warn('Fallback non-streaming query failed:', error_);
+        finalizeBotMessage(thinkingId, i18n[state.lang].error_generic, null);
+    }
+}
+
+function removeThinkingIndicator(thinkingId) {
+    const ind = document.querySelector(`#msg-${thinkingId} .typing-indicator-pro`);
+    if (ind) ind.remove();
+}
+
+async function handleInterviewTurn({ projectId, query, language, thinkingId, pendingSttMetadata }) {
+    const timeoutMs = 30000;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+        state.lastUserInterviewAnswer = query;
+        const userMessageMetadata = {};
+        if (state.pendingInterviewSelectionMeta && typeof state.pendingInterviewSelectionMeta === 'object') {
+            Object.assign(userMessageMetadata, state.pendingInterviewSelectionMeta);
         }
+        if (pendingSttMetadata && typeof pendingSttMetadata === 'object') {
+            Object.assign(userMessageMetadata, pendingSttMetadata);
+        }
+        state.pendingInterviewSelectionMeta = null;
+        await api.post(`/projects/${projectId}/messages`, {
+            messages: [{ role: 'user', content: query, metadata: Object.keys(userMessageMetadata).length ? userMessageMetadata : undefined }]
+        });
+
+        const interviewPayload = { language };
+        if (state.previousSummary) {
+            interviewPayload.last_summary = state.previousSummary;
+        }
+        if (state.lastCoverage) {
+            interviewPayload.last_coverage = state.lastCoverage;
+        }
+
+        const next = await api.post(
+            `/projects/${projectId}/interview/next`,
+            interviewPayload,
+            false,
+            { signal: controller.signal },
+        );
+        await refreshInterviewTelemetry(projectId);
+
+        const questionText = next.question || (state.lang === 'ar'
+            ? 'هل يمكن توضيح النقطة الأخيرة بمثال؟'
+            : 'Could you clarify the last point with an example?');
+
+        let finalQuestionText = questionText;
+        if (normalizeInterviewText(questionText) === normalizeInterviewText(state.lastAssistantQuestion)) {
+            finalQuestionText = state.lang === 'ar'
+                ? 'تمام، خلّينا نوضّح النقطة دي بسرعة: إيه التفصيلة الأهم اللي تحب نعتمدها الآن كقرار واضح؟'
+                : 'Understood — let’s clarify this quickly: what is the single most important detail we should lock now as a clear decision?';
+        }
+        state.lastAssistantQuestion = finalQuestionText;
+        finalizeBotMessage(thinkingId, finalQuestionText, null);
+
+        if (next.coverage) {
+            state.lastCoverage = next.coverage;
+        }
+        state.lastInterviewSignals = next.signals || null;
+        state.lastLivePatch = next.live_patch || null;
+        state.lastCycleTrace = next.cycle_trace || null;
+        state.lastTopicNavigation = next.topic_navigation || null;
+        state.interviewStage = next.stage || state.interviewStage;
+        updateInterviewProgress(next.coverage, next.done, next.topic_navigation);
+        updateInterviewAssistBar(next.coverage);
+        if (next.summary) {
+            updateLiveDoc(next.summary, next.stage);
+        }
+
+        const warningText = Array.isArray(next?.live_patch?.warnings) ? next.live_patch.warnings[0] : '';
+        if (warningText) {
+            showNotification(warningText, 'warning');
+        }
+
+        await saveInterviewDraft(Number.parseInt(projectId, 10));
+
+        await api.post(`/projects/${projectId}/messages`, {
+            messages: [{ role: 'assistant', content: finalQuestionText, metadata: { stage: next.stage || '' } }]
+        });
+
+        if (next.done) {
+            showNotification(i18n[state.lang].interview_completed, 'success');
+            await openInterviewReviewModal(Number.parseInt(projectId, 10), language, next);
+        }
+    } catch (error) {
+        console.error('Interview Error:', error);
+        const aborted = error?.name === 'AbortError';
+        const timeoutMsg = state.lang === 'ar' ? 'انتهت مهلة الطلب. حاول مرة أخرى.' : 'Request timed out. Please try again.';
+        const failedMsg = state.lang === 'ar' ? 'تعذر إكمال المقابلة الآن' : 'Interview failed. Try again.';
+        const msg = aborted ? timeoutMsg : failedMsg;
+        finalizeBotMessage(thinkingId, msg, null);
+        showNotification(msg, 'error');
+    } finally {
+        clearTimeout(timeoutId);
     }
 }
 
@@ -2683,9 +3526,13 @@ function addChatMessage(role, text, isThinking = false) {
     msgDiv.id = `msg-${id}`;
     
     const isUser = role === 'user';
-    const authorName = isUser 
-        ? (state.lang === 'ar' ? 'أنت' : 'You') 
-        : 'RAGMind';
+    const userName = state.lang === 'ar' ? 'أنت' : 'You';
+    const authorName = isUser ? userName : 'Tawasul';
+    const thinkingStageLabel = state.lang === 'ar' ? 'يحلل إجابتك · يركز على' : 'Analyzing your answer · focusing on';
+    const stageValue = i18n[state.lang]['stage_' + state.interviewStage] || state.interviewStage;
+    const thinkingStageHtml = state.interviewMode && state.interviewStage
+        ? `<div class="thinking-stage-label"><i class="fas fa-brain"></i> ${thinkingStageLabel} <strong>${stageValue}</strong></div>`
+        : '';
     
     // Detect text direction
     const textDir = detectTextDirection(text);
@@ -2698,14 +3545,14 @@ function addChatMessage(role, text, isThinking = false) {
             <div class="msg-body">
                 <div class="msg-author">${authorName}</div>
                 <div class="msg-text" dir="${textDir}">${isUser ? escapeHtml(text) : ''}</div>
-                ${isThinking ? '<div class="typing-indicator-pro"><span></span><span></span><span></span></div>' : ''}
+                ${isThinking ? `<div class="typing-indicator-pro"><span></span><span></span><span></span></div>${thinkingStageHtml}` : ''}
             </div>
         </div>
     `;
     
     if (!isUser && !isThinking) {
         const msgText = msgDiv.querySelector('.msg-text');
-        msgText.innerHTML = escapeHtml(text);
+        msgText.innerHTML = formatAnswerHtml(text) || escapeHtml(text);
         msgText.dir = textDir;
     }
     
@@ -2717,11 +3564,11 @@ function addChatMessage(role, text, isThinking = false) {
 function escapeHtml(value) {
     if (value == null) return '';
     return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
 }
 
 function detectTextDirection(text) {
@@ -2732,45 +3579,111 @@ function detectTextDirection(text) {
     return rtlChars.test(firstChars) ? 'rtl' : 'ltr';
 }
 
+function deepCloneValue(value) {
+    if (value == null || typeof value !== 'object') {
+        return value;
+    }
+    if (Array.isArray(value)) {
+        return value.map(item => deepCloneValue(item));
+    }
+    const cloned = {};
+    Object.keys(value).forEach((key) => {
+        cloned[key] = deepCloneValue(value[key]);
+    });
+    return cloned;
+}
+
 function formatAnswerHtml(text) {
     if (!text) return '';
 
-    let cleaned = String(text).replace(/\r\n/g, '\n').trim();
-    cleaned = cleaned.replace(/\s*(Source|Sources|المصدر|المصادر)\s*:.*/gi, '').trim();
-    cleaned = cleaned.replace(/\s+\*\s+/g, '\n* ');
-    cleaned = cleaned.replace(/\s+-\s+/g, '\n- ');
+    let cleaned = String(text).replaceAll('\r\n', '\n').trim();
+    cleaned = cleaned.replaceAll(/\s*(Source|Sources|المصدر|المصادر)\s*:.*/gi, '').trim();
+    cleaned = cleaned.replaceAll(/\s+\*\s+/g, '\n* ');
+    cleaned = cleaned.replaceAll(/\s+-\s+/g, '\n- ');
+    if (!cleaned.includes('\n') && cleaned.length > 220) {
+        cleaned = cleaned.replaceAll(/([.!؟?])\s+(?=[^\n])/g, '$1\n');
+    }
 
     const lines = cleaned.split('\n').map(line => line.trim()).filter(Boolean);
     if (lines.length === 0) return '';
 
     const parts = [];
-    let listBuffer = [];
+    let bulletBuffer = [];
+    let numberedBuffer = [];
 
-    const flushList = () => {
-        if (listBuffer.length === 0) return;
-        const items = listBuffer
+    const isHeadingLine = (line) => {
+        if (!line) return false;
+        if (/^#{1,4}\s+/.test(line)) return true;
+        if (/^(العنوان|ملخص|Summary|Overview|Key Points|النقاط الرئيسية)\s*[:：]?$/i.test(line)) return true;
+        return /^\*\*[^*]{3,}\*\*\s*:?$/.test(line);
+    };
+
+    const isQuestionLine = (line) => /[؟?]\s*$/.test(line);
+    const isNoteLine = (line) => /^(note|important|tip|warning|ملاحظة|تنبيه|مهم)\s*[:-]/i.test(line);
+
+    const flushBullets = () => {
+        if (bulletBuffer.length === 0) return;
+        const items = bulletBuffer
             .map(item => `<li>${formatInlineMarkdown(item)}</li>`)
             .join('');
-        parts.push(`<ul class="answer-list">${items}</ul>`);
-        listBuffer = [];
+        parts.push(`<ul class="answer-list-plain">${items}</ul>`);
+        bulletBuffer = [];
+    };
+
+    const flushNumbered = () => {
+        if (numberedBuffer.length === 0) return;
+        const items = numberedBuffer
+            .map(item => `<li>${formatInlineMarkdown(item)}</li>`)
+            .join('');
+        parts.push(`<ol class="answer-ordered-list-plain">${items}</ol>`);
+        numberedBuffer = [];
     };
 
     lines.forEach(line => {
-        if (/^[*-]\s+/.test(line)) {
-            listBuffer.push(line.replace(/^[*-]\s+/, ''));
+        if (/^\d+[).-]\s+/.test(line)) {
+            flushBullets();
+            numberedBuffer.push(line.replace(/^\d+[).-]\s+/, ''));
             return;
         }
-        flushList();
-        parts.push(`<p class="answer-paragraph">${formatInlineMarkdown(line)}</p>`);
+
+        if (/^[*-]\s+/.test(line)) {
+            flushNumbered();
+            bulletBuffer.push(line.replace(/^[*-]\s+/, ''));
+            return;
+        }
+
+        flushBullets();
+        flushNumbered();
+
+        if (isHeadingLine(line)) {
+            const headingText = line.replace(/^#{1,4}\s+/, '').replace(/^\*\*(.+)\*\*\s*:?$/, '$1');
+            parts.push(`<h4 class="answer-heading-line">${formatInlineMarkdown(headingText)}</h4>`);
+            return;
+        }
+
+        if (isNoteLine(line)) {
+            parts.push(`<p class="answer-note-line">${formatInlineMarkdown(line)}</p>`);
+            return;
+        }
+
+        if (isQuestionLine(line)) {
+            parts.push(`<p class="answer-question-line">${formatInlineMarkdown(line)}</p>`);
+            return;
+        }
+
+        parts.push(`<p class="answer-line">${formatInlineMarkdown(line)}</p>`);
     });
 
-    flushList();
+    flushBullets();
+    flushNumbered();
     return parts.join('');
 }
 
 function formatInlineMarkdown(value) {
     const escaped = escapeHtml(value);
-    return escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return escaped
+    .replaceAll(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replaceAll(/`([^`]+)`/g, '<code>$1</code>');
 }
 
 let _resizeRafId = null;
@@ -2824,11 +3737,11 @@ function handleSearch(query) {
         return;
     }
     const filtered = state.projects.filter(p =>
-        (p.name && p.name.toLowerCase().includes(q)) ||
-        (p.description && p.description.toLowerCase().includes(q))
+        p.name?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q)
     );
     // Render inline results in current view container
-    const list = document.getElementById('all-projects-list') || document.getElementById('recent-projects-list');
+    const list = document.getElementById('all-projects-list') || document.getElementById('recent-projects-list-dashboard');
     if (list) {
         list.innerHTML = '';
         if (filtered.length === 0) {
@@ -2881,39 +3794,77 @@ function setupUploadZone(projectId) {
 }
 
 async function handleFiles(files, projectId) {
+    const unsupportedTypeText = state.lang === 'ar'
+        ? 'نوع الملف غير مدعوم. الملفات المدعومة: PDF, TXT, DOCX'
+        : 'Unsupported file type. Supported: PDF, TXT, DOCX';
     let uploadedAny = false;
     for (const file of files) {
-        const lowerName = file.name.toLowerCase();
-        if (!lowerName.endsWith('.pdf') && !lowerName.endsWith('.txt') && !lowerName.endsWith('.docx')) {
-            showNotification(
-                state.lang === 'ar'
-                    ? 'نوع الملف غير مدعوم. الملفات المدعومة: PDF, TXT, DOCX'
-                    : 'Unsupported file type. Supported: PDF, TXT, DOCX',
-                'warning'
-            );
+        if (!isSupportedUploadFile(file)) {
+            showNotification(unsupportedTypeText, 'warning');
             continue;
         }
-        const formData = new FormData();
-        formData.append('file', file);
-
-        showNotification(`${state.lang === 'ar' ? 'جاري رفع' : 'Uploading'} ${file.name}...`, 'info');
-
-        try {
-            await api.post(`/projects/${projectId}/documents`, formData, true);
-            showNotification(`${state.lang === 'ar' ? 'تم رفع' : 'Uploaded'} ${file.name}`, 'success');
-            uploadedAny = true;
-        } catch (error) {
-            console.error('Upload Error:', error);
-        }
+        const uploadSucceeded = await uploadSingleFile(projectId, file);
+        uploadedAny = uploadedAny || uploadSucceeded;
     }
 
-    // Refresh document list after uploads
     if (uploadedAny) {
-        try {
-            const docs = await api.get(`/projects/${projectId}/documents`);
-            renderDocsList(docs);
-            startDocPolling(projectId, docs);
-        } catch (_) { /* ignore - user will still see upload notification */ }
+        await refreshDocumentsAfterUpload(projectId);
+    }
+}
+
+function isSupportedUploadFile(file) {
+    const lowerName = file.name.toLowerCase();
+    return lowerName.endsWith('.pdf') || lowerName.endsWith('.txt') || lowerName.endsWith('.docx');
+}
+
+async function uploadSingleFile(projectId, file) {
+    const lowerName = file.name.toLowerCase();
+    showNotification(`${state.lang === 'ar' ? 'جاري رفع' : 'Uploading'} ${file.name}...`, 'info');
+
+    try {
+        const presign = await api.post(`/projects/${projectId}/documents/presign`, {
+            filename: file.name,
+            file_size: file.size,
+            content_type: file.type || 'application/octet-stream',
+        });
+
+        const uploadResp = await fetch(presign.upload_url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': presign.content_type || file.type || 'application/octet-stream',
+            },
+            body: file,
+        });
+        if (!uploadResp.ok) {
+            throw new Error(state.lang === 'ar' ? 'فشل الرفع إلى التخزين السحابي' : 'Failed uploading to object storage');
+        }
+
+        await api.post(`/projects/${projectId}/documents/complete`, {
+            unique_filename: presign.unique_filename,
+            original_filename: file.name,
+            file_key: presign.file_key,
+            file_size: file.size,
+            file_type: lowerName.split('.').pop() || '',
+        });
+        showNotification(`${state.lang === 'ar' ? 'تم رفع' : 'Uploaded'} ${file.name}`, 'success');
+        return true;
+    } catch (error) {
+        console.error('Upload Error:', error);
+        return false;
+    }
+}
+
+async function refreshDocumentsAfterUpload(projectId) {
+    try {
+        const docs = await api.get(`/projects/${projectId}/documents`);
+        renderDocsList(docs);
+        startDocPolling(projectId, docs);
+    } catch (error) {
+        console.error('Documents refresh after upload failed:', error);
+        const refreshError = state.lang === 'ar'
+            ? 'تم الرفع ولكن تعذر تحديث قائمة الملفات'
+            : 'Upload succeeded but document list refresh failed';
+        showNotification(error?.message || refreshError, 'warning');
     }
 }
 
@@ -3043,7 +3994,7 @@ function openBookingModal() {
 // --- Voice Recording (STT) ---
 
 async function startRecording() {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    if (navigator.mediaDevices?.getUserMedia == null) {
         showNotification(i18n[state.lang].mic_no_support, 'warning');
         return;
     }
@@ -3090,8 +4041,7 @@ async function transcribeAudio(blob) {
     }
 
     try {
-        const langSelect = document.getElementById('chat-lang');
-        const language = langSelect ? langSelect.value : 'auto';
+        const language = state.lang === 'ar' ? 'ar' : 'en';
 
         const formData = new FormData();
         formData.append('file', blob, 'recording.webm');
@@ -3103,19 +4053,11 @@ async function transcribeAudio(blob) {
             body: formData
         });
 
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.detail || 'Transcription failed');
-        }
+        await throwIfNotOk(response, 'Transcription failed');
 
         const result = await response.json();
         if (result.success && result.text) {
-            const chatInput = document.getElementById('chat-input');
-            if (chatInput) {
-                chatInput.value += (chatInput.value ? ' ' : '') + result.text;
-                chatInput.oninput();
-                chatInput.focus();
-            }
+            await applyTranscriptResult(result);
         }
     } catch (error) {
         console.error('STT Error:', error);
@@ -3126,6 +4068,59 @@ async function transcribeAudio(blob) {
             micBtn.innerHTML = '<i class="fas fa-microphone"></i>';
         }
     }
+}
+
+function getUnavailableConfidenceText() {
+    return state.lang === 'ar' ? 'غير متاح' : 'N/A';
+}
+
+function buildTranscriptConfirmationText(resultText, confidencePct, warningSuffix) {
+    if (state.lang === 'ar') {
+        return `مراجعة نص التفريغ قبل اعتماده:\n\n${resultText}\n\nدرجة الثقة: ${confidencePct}${warningSuffix}\n\nهل تؤكد هذا النص؟`;
+    }
+    return `Please review the transcript before using it:\n\n${resultText}\n\nConfidence: ${confidencePct}${warningSuffix}\n\nDo you confirm this text?`;
+}
+
+function applyTranscriptToInput(text) {
+    const chatInput = document.getElementById('chat-input');
+    if (!chatInput) return;
+    chatInput.value += (chatInput.value ? ' ' : '') + text;
+    chatInput.oninput();
+    chatInput.focus();
+}
+
+function notifyTranscriptReviewState(requiresConfirmation, warningList) {
+    if (!(requiresConfirmation || warningList.length > 0)) return;
+    showNotification(
+        state.lang === 'ar'
+            ? 'تم اعتماد النص بعد مراجعة بشرية. يُرجى التحقق من المصطلحات الحساسة.'
+            : 'Transcript confirmed by human review. Please re-check sensitive terms.',
+        'info'
+    );
+}
+
+async function applyTranscriptResult(result) {
+    const confidence = Number.isFinite(result.confidence) ? result.confidence : null;
+    const warningList = Array.isArray(result.quality_warnings) ? result.quality_warnings : [];
+    const confidencePct = confidence == null ? getUnavailableConfidenceText() : `${Math.round(confidence * 100)}%`;
+    const warningSuffix = warningList.length ? `\n\n${warningList.slice(0, 2).join('\n')}` : '';
+    const confirmText = buildTranscriptConfirmationText(result.text, confidencePct, warningSuffix);
+    const confirmed = globalThis.confirm(confirmText);
+
+    if (!confirmed) {
+        showNotification(state.lang === 'ar' ? 'تم إلغاء إدراج التفريغ الصوتي' : 'Transcript insertion cancelled', 'warning');
+        return;
+    }
+
+    state.pendingSttMeta = {
+        source: 'stt',
+        transcript_confirmed: true,
+        stt_confidence: confidence,
+        quality_warnings: warningList,
+    };
+
+    applyTranscriptToInput(result.text);
+    notifyTranscriptReviewState(result.requires_confirmation, warningList);
 }
 
 function updateMicButton(recording) {
@@ -3157,47 +4152,65 @@ function updateInterviewProgress(coverage, done, topicNavigation = null) {
     if (progressBar) {
         progressBar.style.display = 'block';
         const areas = INTERVIEW_AREAS;
+        const stageLabels = {
+            discovery: i18n[state.lang].stage_discovery,
+            scope: i18n[state.lang].stage_scope,
+            users: i18n[state.lang].stage_users,
+            features: i18n[state.lang].stage_features,
+            constraints: i18n[state.lang].stage_constraints
+        };
+        const activeArea = getActiveCoverageArea(coverage, areas);
 
-        // Find the active area (lowest coverage that is not yet >= 70%)
-        let activeArea = null;
-        if (coverage) {
-            let minCoverage = Infinity;
-            for (const area of areas) {
-                const pct = coverage[area] || 0;
-                if (pct < 70 && pct < minCoverage) {
-                    minCoverage = pct;
-                    activeArea = area;
-                }
-            }
-        }
-
-        areas.forEach(area => {
+        areas.forEach((area, index) => {
             const pct = coverage ? (coverage[area] || 0) : 0;
-            const fillEl = document.getElementById(`coverage-${area}`);
-            const pctEl = document.getElementById(`coverage-pct-${area}`);
-            const itemEl = progressBar.querySelector(`[data-area="${area}"]`);
-
-            if (fillEl) fillEl.style.width = `${Math.min(100, pct)}%`;
-            if (pctEl) pctEl.textContent = `${Math.round(pct)}%`;
-
-            if (itemEl) {
-                itemEl.classList.remove('active-area', 'complete-area');
-                if (pct >= 70) {
-                    itemEl.classList.add('complete-area');
-                } else if (area === activeArea) {
-                    itemEl.classList.add('active-area');
-                }
-            }
+            updateCoverageProgressItem(progressBar, area, index, pct, stageLabels, activeArea);
         });
     }
 
     if (liveDocPanel) {
-        liveDocPanel.style.display = 'flex';
+        applySummaryDrawerState();
     }
 
     if (assistBar) {
         assistBar.style.display = 'block';
     }
+}
+
+function getActiveCoverageArea(coverage, areas) {
+    if (!coverage) return null;
+    let minCoverage = Infinity;
+    let activeArea = null;
+    for (const area of areas) {
+        const pct = coverage[area] || 0;
+        if (pct < 70 && pct < minCoverage) {
+            minCoverage = pct;
+            activeArea = area;
+        }
+    }
+    return activeArea;
+}
+
+function updateCoverageProgressItem(progressBar, area, index, pct, stageLabels, activeArea) {
+    const fillEl = document.getElementById(`coverage-${area}`);
+    const pctEl = document.getElementById(`coverage-pct-${area}`);
+    const itemEl = progressBar.querySelector(`[data-area="${area}"]`);
+    const roundedPct = Math.round(pct);
+
+    if (fillEl) {
+        fillEl.textContent = String(index + 1);
+        fillEl.dataset.pct = `${roundedPct}%`;
+        fillEl.setAttribute('aria-label', `${stageLabels[area] || area} ${roundedPct}%`);
+    }
+    if (pctEl) pctEl.textContent = `${roundedPct}%`;
+
+    if (!itemEl) return;
+    itemEl.classList.remove('active-area', 'complete-area');
+    if (pct >= 70) {
+        itemEl.classList.add('complete-area');
+    } else if (area === activeArea) {
+        itemEl.classList.add('active-area');
+    }
+    itemEl.title = `${stageLabels[area] || area} ${roundedPct}%`;
 }
 
 function updateLiveDoc(summary, stage) {
@@ -3220,147 +4233,200 @@ function updateLiveDoc(summary, stage) {
         constraints: i18n[state.lang].stage_constraints
     };
 
-    // Structured summary (object with arrays)
-    if (typeof summary === 'object' && !Array.isArray(summary)) {
-        const prevSummary = state.previousSummary || {};
-        const patch = state.lastLivePatch || null;
-        const trace = state.lastCycleTrace || null;
-        const focusArea = patch?.focus_area || null;
-        const patchMap = new Map((patch?.changed_areas || []).map((item) => [item.area, item]));
-        const patchEvents = Array.isArray(patch?.events) ? patch.events : [];
-        const eventMap = new Map(patchEvents.map((event) => [String(event?.field_path || ''), String(event?.op || '')]));
-        const removedEvents = patchEvents.filter((event) => String(event?.op || '') === 'removed');
-        const alerts = Array.isArray(patch?.alerts) ? patch.alerts : [];
-        const plan = patch?.next_plan || null;
-        let html = '';
-
-        if (alerts.length > 0) {
-            html += `
-                <div class="live-doc-alerts">
-                    ${alerts.map((alert) => {
-                        const severity = String(alert?.severity || 'info');
-                        const title = escapeHtml(String(alert?.title || 'Alert'));
-                        const msg = escapeHtml(String(alert?.message || ''));
-                        return `
-                            <div class="live-doc-alert live-doc-alert-${severity}">
-                                <div class="live-doc-alert-title">${title}</div>
-                                <div class="live-doc-alert-text">${msg}</div>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
-        }
-
-        if (plan?.target_stage || plan?.question_style) {
-            const stageKey = plan?.target_stage ? `stage_${plan.target_stage}` : '';
-            const stageLabel = stageKey ? (i18n[state.lang][stageKey] || plan.target_stage) : '';
-            const styleText = escapeHtml(String(plan?.question_style || ''));
-            const hintText = escapeHtml(String(plan?.prompt_hint || ''));
-            html += `
-                <div class="live-doc-plan">
-                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'التركيز القادم:' : 'Next focus:'}</strong> ${escapeHtml(stageLabel)}</div>
-                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'نمط السؤال:' : 'Question style:'}</strong> ${styleText}</div>
-                    ${hintText ? `<div class="live-doc-plan-row">${hintText}</div>` : ''}
-                </div>
-            `;
-        }
-
-        if (trace?.steps && Array.isArray(trace.steps)) {
-            const scoreCoverage = Number(trace?.score?.coverage || 0);
-            const scoreConfidence = Number(trace?.score?.confidence || 0);
-            const riskLevel = escapeHtml(String(trace?.score?.risk_level || 'low'));
-            html += `
-                <div class="live-doc-trace">
-                    <div class="live-doc-trace-head">
-                        <strong>${state.lang === 'ar' ? 'دورة التفكير' : 'Cognitive loop'}</strong>
-                        <span>${state.lang === 'ar' ? 'تغطية' : 'Coverage'}: ${Math.round(scoreCoverage)}%</span>
-                        <span>${state.lang === 'ar' ? 'ثقة' : 'Confidence'}: ${Math.round(scoreConfidence * 100)}%</span>
-                        <span>${state.lang === 'ar' ? 'مخاطرة' : 'Risk'}: ${riskLevel}</span>
-                    </div>
-                    <div class="live-doc-trace-steps">
-                        ${trace.steps.map((step, idx) => {
-                            const name = escapeHtml(String(step?.name || `step-${idx + 1}`));
-                            const text = escapeHtml(String(step?.summary || ''));
-                            return `
-                                <div class="live-doc-trace-step">
-                                    <div class="live-doc-trace-step-name">${idx + 1}. ${name}</div>
-                                    <div class="live-doc-trace-step-text">${text}</div>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        if (removedEvents.length > 0) {
-            html += `
-                <div class="live-doc-plan">
-                    <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'حقول تمت إزالتها:' : 'Removed fields:'}</strong></div>
-                    ${removedEvents.slice(0, 5).map((event) => {
-                        const path = escapeHtml(String(event?.field_path || ''));
-                        const value = escapeHtml(String(event?.value || ''));
-                        return `<div class="live-doc-plan-row live-doc-removed-item">${path}: ${value}</div>`;
-                    }).join('')}
-                </div>
-            `;
-        }
-
-        for (const [area, items] of Object.entries(summary)) {
-            if (!Array.isArray(items) || items.length === 0) continue;
-
-            const prevItems = (prevSummary[area] || []);
-            const icon = areaIcons[area] || 'fa-circle-dot';
-            const label = stageLabels[area] || area;
-            const isFocus = focusArea && focusArea === area;
-            const areaPatch = patchMap.get(area);
-            const delta = Number(areaPatch?.coverage_delta || 0);
-
-            html += `
-                <div class="live-doc-srs-section ${isFocus ? 'live-doc-focus-area' : ''}">
-                    <div class="live-doc-section-header">
-                        <i class="fas ${icon}"></i>
-                        <span>${escapeHtml(label)}</span>
-                        <span class="live-doc-count-badge">${items.length}</span>
-                        ${delta > 0 ? `<span class="live-doc-delta-badge">+${Math.round(delta)}%</span>` : ''}
-                    </div>
-                    <ul class="live-doc-items">
-                        ${items.map((item, idx) => {
-                            const isNew = !prevItems.includes(item);
-                            const fieldPath = `${area}.${idx}`;
-                            const op = eventMap.get(fieldPath);
-                            const updatedClass = op === 'updated' ? 'live-doc-updated-item' : '';
-                            const addedClass = op === 'added' ? 'live-doc-new-item' : '';
-                            return `<li class="${isNew ? 'live-doc-new-item' : ''} ${addedClass} ${updatedClass}">${escapeHtml(item)}</li>`;
-                        }).join('')}
-                    </ul>
-                </div>
-            `;
-        }
-
-        content.innerHTML = html || `
-            <div class="live-doc-empty">
-                <i class="fas fa-pencil-alt"></i>
-                <p>${i18n[state.lang].live_doc_empty}</p>
-            </div>
-        `;
-
-        // Store deep copy for diff tracking
-        state.previousSummary = JSON.parse(JSON.stringify(summary));
-
-        // Auto-scroll to newest item
-        const newItems = content.querySelectorAll('.live-doc-new-item');
-        if (newItems.length > 0) {
-            newItems[newItems.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
-
+    if (isStructuredSummary(summary)) {
+        renderStructuredLiveDoc(content, summary, areaIcons, stageLabels);
         return;
     }
 
-    // Legacy: string summary (backward compatible)
-    const stageLabel = stageLabels[stage] || stage;
+    renderLegacyLiveDoc(content, summary, stageLabels, stage);
+}
 
+function isStructuredSummary(summary) {
+    return typeof summary === 'object' && !Array.isArray(summary);
+}
+
+function renderStructuredLiveDoc(content, summary, areaIcons, stageLabels) {
+    const model = buildLiveDocRenderModel(summary);
+    const htmlParts = [];
+
+    const alertsHtml = buildLiveDocAlertsHtml(model.alerts);
+    if (alertsHtml) htmlParts.push(alertsHtml);
+
+    const planHtml = buildLiveDocPlanHtml(model.plan);
+    if (planHtml) htmlParts.push(planHtml);
+
+    const traceHtml = buildLiveDocTraceHtml(model.trace);
+    if (traceHtml) htmlParts.push(traceHtml);
+
+    const removedHtml = buildLiveDocRemovedHtml(model.removedEvents);
+    if (removedHtml) htmlParts.push(removedHtml);
+
+    htmlParts.push(buildLiveDocSectionsHtml(summary, model, areaIcons, stageLabels));
+
+    content.innerHTML = htmlParts.join('') || `
+        <div class="live-doc-empty">
+            <i class="fas fa-pencil-alt"></i>
+            <p>${i18n[state.lang].live_doc_empty}</p>
+        </div>
+    `;
+
+    state.previousSummary = deepCloneValue(summary);
+    scrollToLatestLiveDocItem(content);
+}
+
+function buildLiveDocRenderModel(summary) {
+    const patch = state.lastLivePatch || null;
+    const patchEvents = Array.isArray(patch?.events) ? patch.events : [];
+    return {
+        prevSummary: state.previousSummary || {},
+        focusArea: patch?.focus_area || null,
+        patchMap: new Map((patch?.changed_areas || []).map((item) => [item.area, item])),
+        eventMap: new Map(patchEvents.map((event) => [String(event?.field_path || ''), String(event?.op || '')])),
+        removedEvents: patchEvents.filter((event) => String(event?.op || '') === 'removed'),
+        alerts: Array.isArray(patch?.alerts) ? patch.alerts : [],
+        plan: patch?.next_plan || null,
+        trace: state.lastCycleTrace || null,
+        summary,
+    };
+}
+
+function buildLiveDocAlertsHtml(alerts) {
+    if (!alerts.length) return '';
+    return `
+        <div class="live-doc-alerts">
+            ${alerts.map((alert) => {
+                const severity = String(alert?.severity || 'info');
+                const title = escapeHtml(String(alert?.title || 'Alert'));
+                const msg = escapeHtml(String(alert?.message || ''));
+                return `
+                    <div class="live-doc-alert live-doc-alert-${severity}">
+                        <div class="live-doc-alert-title">${title}</div>
+                        <div class="live-doc-alert-text">${msg}</div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+}
+
+function buildLiveDocPlanHtml(plan) {
+    if (!(plan?.target_stage || plan?.question_style)) return '';
+    const stageKey = plan?.target_stage ? `stage_${plan.target_stage}` : '';
+    const stageLabel = stageKey ? (i18n[state.lang][stageKey] || plan.target_stage) : '';
+    const styleText = escapeHtml(String(plan?.question_style || ''));
+    const hintText = escapeHtml(String(plan?.prompt_hint || ''));
+    return `
+        <div class="live-doc-plan">
+            <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'التركيز القادم:' : 'Next focus:'}</strong> ${escapeHtml(stageLabel)}</div>
+            <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'نمط السؤال:' : 'Question style:'}</strong> ${styleText}</div>
+            ${hintText ? `<div class="live-doc-plan-row">${hintText}</div>` : ''}
+        </div>
+    `;
+}
+
+function buildLiveDocTraceHtml(trace) {
+    if (!(trace?.steps && Array.isArray(trace.steps))) return '';
+    const scoreCoverage = Number(trace?.score?.coverage || 0);
+    const scoreConfidence = Number(trace?.score?.confidence || 0);
+    const riskLevel = escapeHtml(String(trace?.score?.risk_level || 'low'));
+    return `
+        <div class="live-doc-trace">
+            <div class="live-doc-trace-head">
+                <strong>${state.lang === 'ar' ? 'دورة التفكير' : 'Cognitive loop'}</strong>
+                <span>${state.lang === 'ar' ? 'تغطية' : 'Coverage'}: ${Math.round(scoreCoverage)}%</span>
+                <span>${state.lang === 'ar' ? 'ثقة' : 'Confidence'}: ${Math.round(scoreConfidence * 100)}%</span>
+                <span>${state.lang === 'ar' ? 'مخاطرة' : 'Risk'}: ${riskLevel}</span>
+            </div>
+            <div class="live-doc-trace-steps">
+                ${trace.steps.map((step, idx) => {
+                    const name = escapeHtml(String(step?.name || `step-${idx + 1}`));
+                    const text = escapeHtml(String(step?.summary || ''));
+                    return `
+                        <div class="live-doc-trace-step">
+                            <div class="live-doc-trace-step-name">${idx + 1}. ${name}</div>
+                            <div class="live-doc-trace-step-text">${text}</div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        </div>
+    `;
+}
+
+function buildLiveDocRemovedHtml(removedEvents) {
+    if (!removedEvents.length) return '';
+    return `
+        <div class="live-doc-plan">
+            <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'حقول تمت إزالتها:' : 'Removed fields:'}</strong></div>
+            ${removedEvents.slice(0, 5).map((event) => {
+                const path = escapeHtml(String(event?.field_path || ''));
+                const value = escapeHtml(String(event?.value || ''));
+                return `<div class="live-doc-plan-row live-doc-removed-item">${path}: ${value}</div>`;
+            }).join('')}
+        </div>
+    `;
+}
+
+function buildLiveDocSectionsHtml(summary, model, areaIcons, stageLabels) {
+    let html = '';
+    for (const [area, items] of Object.entries(summary)) {
+        if (!Array.isArray(items) || items.length === 0) continue;
+        html += buildLiveDocAreaHtml(area, items, model, areaIcons, stageLabels);
+    }
+    return html;
+}
+
+function buildLiveDocAreaHtml(area, items, model, areaIcons, stageLabels) {
+    const prevItems = model.prevSummary[area] || [];
+    const icon = areaIcons[area] || 'fa-circle-dot';
+    const label = stageLabels[area] || area;
+    const isFocus = model.focusArea && model.focusArea === area;
+    const areaPatch = model.patchMap.get(area);
+    const delta = Number(areaPatch?.coverage_delta || 0);
+
+    return `
+        <div class="live-doc-srs-section ${isFocus ? 'live-doc-focus-area' : ''}">
+            <div class="live-doc-section-header">
+                <i class="fas ${icon}"></i>
+                <span>${escapeHtml(label)}</span>
+                <span class="live-doc-count-badge">${items.length}</span>
+                ${delta > 0 ? `<span class="live-doc-delta-badge">+${Math.round(delta)}%</span>` : ''}
+            </div>
+            <ul class="live-doc-items">
+                ${items.map((item, idx) => buildLiveDocItemHtml(area, idx, item, prevItems, model.eventMap)).join('')}
+            </ul>
+        </div>
+    `;
+}
+
+function buildLiveDocItemHtml(area, idx, item, prevItems, eventMap) {
+    // Items from the interview service are {id, value} objects; fall back to plain string.
+    const text = (typeof item === 'object' && item !== null)
+        ? String(item.value || '')
+        : String(item ?? '');
+    const itemId = (typeof item === 'object' && item !== null) ? String(item.id || '') : '';
+    const isNew = !prevItems.some((p) => {
+        if (typeof p === 'object' && p !== null) {
+            return (itemId && p.id === itemId) || p.value === text;
+        }
+        return String(p) === text;
+    });
+    const fieldPath = `${area}.${idx}`;
+    const op = eventMap.get(fieldPath);
+    const updatedClass = op === 'updated' ? 'live-doc-updated-item' : '';
+    const addedClass = op === 'added' ? 'live-doc-new-item' : '';
+    return `<li class="${isNew ? 'live-doc-new-item' : ''} ${addedClass} ${updatedClass}">${escapeHtml(text)}</li>`;
+}
+
+function scrollToLatestLiveDocItem(content) {
+    const newItems = content.querySelectorAll('.live-doc-new-item');
+    if (newItems.length > 0) {
+        newItems[newItems.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+}
+
+function renderLegacyLiveDoc(content, summary, stageLabels, stage) {
+    const stageLabel = stageLabels[stage] || stage;
     content.innerHTML = `
         <div class="live-doc-section">
             <div class="live-doc-stage-badge">
@@ -3378,8 +4444,9 @@ async function autoLogin() {
         const res = await fetch(`${API_BASE_URL}/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: 'admin@ragmind.com', password: 'admin123' })
+            body: JSON.stringify({ email: 'admin@tawasul.com', password: 'admin123' })
         });
+        await throwIfNotOk(res, 'Login failed');
         if (res.ok) {
             const data = await res.json();
             setAuthState(data.token, data.user);
@@ -3387,7 +4454,7 @@ async function autoLogin() {
             return;
         }
     } catch (e) {
-        // Backend not reachable, fall through to auth screen
+        console.warn('Auto-login unavailable; showing auth screen.', e);
     }
     showAuthScreen();
 }
@@ -3475,10 +4542,7 @@ function showAuthScreen() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, password })
             });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || 'Login failed');
-            }
+            await throwIfNotOk(res, 'Login failed');
             const data = await res.json();
             setAuthState(data.token, data.user);
             showApp();
@@ -3521,10 +4585,7 @@ function showAuthScreen() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name, email, password })
             });
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || 'Registration failed');
-            }
+            await throwIfNotOk(res, 'Registration failed');
             const data = await res.json();
             setAuthState(data.token, data.user);
             showApp();
@@ -3594,6 +4655,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Nav Clicks
     elements.navItems.forEach(item => {
         item.onclick = () => {
+            if (!item.dataset.view) return;
             closeMobileSidebar();
             switchView(item.dataset.view);
         };
@@ -3667,6 +4729,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Sidebar keyboard navigation: Enter/Space triggers switchView
     elements.navItems.forEach(item => {
         item.onkeydown = (e) => {
+            if (!item.dataset.view) return;
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 closeMobileSidebar();
@@ -3679,14 +4742,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const offlineBanner = document.getElementById('offline-banner');
     if (offlineBanner) {
         const updateOnlineStatus = () => {
-            if (!navigator.onLine) {
-                offlineBanner.classList.add('visible');
-            } else {
+            if (navigator.onLine) {
                 offlineBanner.classList.remove('visible');
+                return;
             }
+            offlineBanner.classList.add('visible');
         };
-        window.addEventListener('online', updateOnlineStatus);
-        window.addEventListener('offline', updateOnlineStatus);
+        globalThis.addEventListener('online', updateOnlineStatus);
+        globalThis.addEventListener('offline', updateOnlineStatus);
         updateOnlineStatus();
     }
 
@@ -3705,5 +4768,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initial View
     applyTranslations();
-    switchView('dashboard');
+    switchView('projects');
 });

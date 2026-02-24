@@ -9,19 +9,14 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from backend.database import get_db
-from backend.database.models import Project, User
+from backend.database.connection import async_session_maker
+from backend.database.models import Asset, Project, User
 from backend.routes.auth import get_current_user
-from backend.controllers.document_controller import DocumentController
+from backend.config import settings
+from backend.services.file_service import FileService
 
 router = APIRouter(tags=["Documents"])
-_document_controller = None
-
-
-def get_document_controller() -> DocumentController:
-    global _document_controller
-    if _document_controller is None:
-        _document_controller = DocumentController()
-    return _document_controller
+_file_service = FileService()
 
 
 async def _verify_project_access(db: AsyncSession, project_id: int, user: User):
@@ -50,7 +45,98 @@ class AssetResponse(BaseModel):
         from_attributes = True
 
 
+class PresignUploadRequest(BaseModel):
+    filename: str
+    file_size: int
+    content_type: Optional[str] = None
+
+
+class PresignUploadResponse(BaseModel):
+    upload_url: str
+    file_key: str
+    unique_filename: str
+    content_type: str
+    expires_in: int
+
+
+class CompleteUploadRequest(BaseModel):
+    unique_filename: str
+    original_filename: str
+    file_key: str
+    file_size: int
+    file_type: str
+
+
 # Routes
+@router.post("/projects/{project_id}/documents/presign", response_model=PresignUploadResponse)
+async def presign_document_upload(
+    project_id: int,
+    payload: PresignUploadRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_project_access(db, project_id, user)
+    if payload.file_size > _file_service.max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"File too large. Maximum size is {settings.max_file_size_mb}MB")
+
+    ext = (payload.filename.rsplit('.', 1)[-1].lower() if '.' in payload.filename else "")
+    if f".{ext}" not in _file_service.get_supported_extensions():
+        raise HTTPException(status_code=400, detail="Unsupported file type. Supported: PDF, TXT, DOCX")
+
+    try:
+        response = await _file_service.generate_presigned_upload(
+            project_id=project_id,
+            filename=payload.filename,
+            content_type=payload.content_type or "application/octet-stream",
+        )
+        return PresignUploadResponse(**response)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.post("/projects/{project_id}/documents/complete", response_model=AssetResponse, status_code=201)
+async def complete_document_upload(
+    project_id: int,
+    payload: CompleteUploadRequest,
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await _verify_project_access(db, project_id, user)
+    if payload.file_size > _file_service.max_size_bytes:
+        raise HTTPException(status_code=400, detail=f"File too large. Maximum size is {settings.max_file_size_mb}MB")
+
+    file_type = str(payload.file_type or "").lower()
+    if f".{file_type}" not in _file_service.get_supported_extensions():
+        raise HTTPException(status_code=400, detail="Unsupported file type. Supported: PDF, TXT, DOCX")
+
+    if str(settings.object_storage_provider or "local").strip().lower() in {"aws_s3", "s3"}:
+        file_path = f"s3://{settings.aws_s3_bucket}/{payload.file_key}"
+    else:
+        file_path = payload.file_key
+
+    asset = Asset(
+        project_id=project_id,
+        filename=payload.unique_filename,
+        original_filename=payload.original_filename,
+        file_path=file_path,
+        file_size=payload.file_size,
+        file_type=file_type,
+        status="uploaded",
+    )
+    db.add(asset)
+    await db.commit()
+    await db.refresh(asset)
+
+    background_tasks.add_task(
+        _process_document_asset,
+        asset_id=asset.id,
+    )
+    return asset
+
+
 @router.post("/projects/{project_id}/documents", response_model=AssetResponse, status_code=201)
 async def upload_document(
     project_id: int,
@@ -69,19 +155,32 @@ async def upload_document(
         file_content = await file.read()
         file_size = len(file_content)
 
-        # Upload document
-        document_controller = get_document_controller()
-        asset = await document_controller.upload_document(
-            db=db,
-            project_id=project_id,
+        is_valid, error_msg = _file_service.validate_file(file.filename, file_size)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=error_msg or "Invalid file")
+
+        unique_filename, file_path = await _file_service.save_upload_file(
             file_content=file_content,
             filename=file.filename,
-            file_size=file_size
+            project_id=project_id,
         )
+        file_type = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ""
+        asset = Asset(
+            project_id=project_id,
+            filename=unique_filename,
+            original_filename=file.filename,
+            file_path=file_path,
+            file_size=file_size,
+            file_type=file_type,
+            status="uploaded",
+        )
+        db.add(asset)
+        await db.commit()
+        await db.refresh(asset)
 
         # Process in background
         background_tasks.add_task(
-            document_controller.process_document,
+            _process_document_asset,
             asset_id=asset.id
         )
 
@@ -104,12 +203,9 @@ async def list_project_documents(
     """List all documents in project."""
     await _verify_project_access(db, project_id, user)
     try:
-        document_controller = get_document_controller()
-        documents = await document_controller.list_project_documents(
-            db=db,
-            project_id=project_id
-        )
-        return documents
+        stmt = select(Asset).where(Asset.project_id == project_id).order_by(Asset.created_at.desc())
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
     except HTTPException:
         raise
     except Exception as e:
@@ -124,8 +220,8 @@ async def get_document(
 ):
     """Get document by ID."""
     try:
-        document_controller = get_document_controller()
-        document = await document_controller.get_document(db=db, asset_id=asset_id)
+        result = await db.execute(select(Asset).where(Asset.id == asset_id))
+        document = result.scalar_one_or_none()
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         return document
@@ -143,9 +239,11 @@ async def process_document(
 ):
     """Manually trigger document processing."""
     try:
-        document_controller = get_document_controller()
-        await document_controller.process_document(asset_id=asset_id)
-        document = await document_controller.get_document(db=db, asset_id=asset_id)
+        await _process_document_asset(asset_id=asset_id)
+        result = await db.execute(select(Asset).where(Asset.id == asset_id))
+        document = result.scalar_one_or_none()
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
         return document
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -161,12 +259,43 @@ async def delete_document(
 ):
     """Delete document."""
     try:
-        document_controller = get_document_controller()
-        deleted = await document_controller.delete_document(db=db, asset_id=asset_id)
-        if not deleted:
+        result = await db.execute(select(Asset).where(Asset.id == asset_id))
+        asset = result.scalar_one_or_none()
+        if not asset:
             raise HTTPException(status_code=404, detail="Document not found")
+
+        await _file_service.delete_file(asset.file_path)
+        await db.delete(asset)
+        await db.commit()
         return None
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+async def _process_document_asset(asset_id: int) -> bool:
+    async with async_session_maker() as db:
+        result = await db.execute(select(Asset).where(Asset.id == asset_id))
+        asset = result.scalar_one_or_none()
+        if not asset:
+            raise ValueError(f"Asset not found: {asset_id}")
+
+        asset.status = "processing"
+        await db.commit()
+
+        try:
+            text = await _file_service.extract_text(asset.file_path)
+            asset.extracted_text = text
+            asset.status = "completed"
+            asset.processed_at = datetime.utcnow()
+            metadata = dict(asset.extra_metadata or {})
+            metadata.update({"stage": "completed", "progress": 100, "processed_chunks": 1, "total_chunks": 1})
+            asset.extra_metadata = metadata
+            await db.commit()
+            return True
+        except Exception as exc:  # noqa: BLE001
+            asset.status = "failed"
+            asset.error_message = str(exc)
+            await db.commit()
+            raise

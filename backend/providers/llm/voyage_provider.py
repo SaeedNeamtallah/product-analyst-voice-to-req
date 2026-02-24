@@ -17,9 +17,9 @@ class VoyageProvider(LLMInterface):
     """Voyage AI provider implementation (embeddings only)."""
 
     def __init__(self, api_key: str = None, embed_model: str = None, output_dimension: int = None):
-        self.api_key = api_key or settings.voyage_api_key
-        self.embed_model = embed_model or settings.voyage_embed_model
-        self.output_dimension = output_dimension or settings.voyage_output_dimension
+        self.api_key = api_key or getattr(settings, "voyage_api_key", "")
+        self.embed_model = embed_model or getattr(settings, "voyage_embed_model", "voyage-3-large")
+        self.output_dimension = output_dimension or getattr(settings, "voyage_output_dimension", 1024)
 
         try:
             import voyageai

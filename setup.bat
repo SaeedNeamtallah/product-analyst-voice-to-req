@@ -2,7 +2,7 @@
 chcp 65001 >nul
 color 0A
 echo ========================================
-echo    RAGMind - Setup Script
+echo    Tawasul - Setup Script
 echo    Installing all project dependencies
 echo ========================================
 echo.
@@ -69,7 +69,7 @@ echo.
 echo ========================================
 echo 3. Install dependencies with uv (much faster!)
 echo ========================================
-uv pip install -r backend\requirements.txt
+uv pip install --python venv\Scripts\python.exe -r backend\requirements.txt
 if errorlevel 1 (
     echo [ERROR] Failed to install dependencies!
     echo Please check requirements.txt and your internet connection
@@ -77,6 +77,20 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [✓] All dependencies installed successfully
+
+echo [INFO] Verifying critical Python imports...
+venv\Scripts\python.exe -c "import dotenv, pydantic_settings, fastapi, sqlalchemy; print('imports-ok')" >nul 2>&1
+if errorlevel 1 (
+    echo [WARNING] Dependency verification failed. Reinstalling critical packages in the same venv...
+    uv pip install --python venv\Scripts\python.exe --reinstall python-dotenv pydantic-settings fastapi sqlalchemy
+    if errorlevel 1 (
+        echo [ERROR] Could not repair dependencies in venv.
+        echo Please run: venv\Scripts\python.exe -m pip install --force-reinstall python-dotenv pydantic-settings fastapi sqlalchemy
+        pause
+        exit /b 1
+    )
+)
+echo [✓] Dependency verification passed
 echo.
 
 :: Create .env file if not exists
@@ -129,7 +143,7 @@ if errorlevel 1 (
     echo.
     echo Alternatively, set up PostgreSQL manually:
     echo   1. Install PostgreSQL
-    echo   2. Create database: CREATE DATABASE ragmind;
+    echo   2. Create database: CREATE DATABASE tawasul;
     echo   3. Update DATABASE_URL in .env
     echo.
     goto skip_docker
@@ -168,7 +182,10 @@ echo ========================================
 echo 7. Initialize database tables
 echo ========================================
 choice /C YN /M "Do you want to initialize the database tables now?"
-if errorlevel 1 (
+if errorlevel 2 (
+    echo [!] You can initialize the database later with:
+    echo     python -m backend.init_database
+) else (
     echo [INFO] Initializing database...
     python -m backend.init_database
     if errorlevel 1 (
@@ -179,9 +196,6 @@ if errorlevel 1 (
     ) else (
         echo [✓] Database initialized successfully
     )
-) else (
-    echo [!] You can initialize the database later with:
-    echo     python -m backend.init_database
 )
 echo.
 

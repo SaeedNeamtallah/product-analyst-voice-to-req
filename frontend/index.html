@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RAGMind | لوحة التحكم الذكية</title>
+    <title>Tawasul | لوحة التحكم الذكية</title>
     <link rel="icon" href="favicon.svg" type="image/svg+xml">
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -15,7 +15,7 @@
     <!-- Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Custom Styles -->
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260223-3">
 </head>
 
 <body class="light-theme">
@@ -30,7 +30,7 @@
         <div class="auth-card">
             <div class="auth-logo">
                 <i class="fas fa-brain-circuit"></i>
-                <span>RAGMind</span>
+                <span>Tawasul</span>
             </div>
             <p class="auth-subtitle" id="auth-subtitle">سجّل دخولك للمتابعة</p>
 
@@ -83,7 +83,7 @@
             <div class="sidebar-header">
                 <div class="logo">
                     <i class="fas fa-brain-circuit"></i>
-                    <span>RAGMind</span>
+                    <span>Tawasul</span>
                 </div>
                 <button id="sidebar-toggle-btn" class="icon-btn sidebar-toggle-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
                     <i class="fas fa-angles-right"></i>
@@ -92,29 +92,22 @@
 
             <nav class="sidebar-nav" role="navigation" aria-label="Main navigation">
                 <ul>
-                    <li class="active" data-view="dashboard" tabindex="0" role="button">
-                        <i class="fas fa-chart-pie"></i>
-                        <span data-i18n="nav_dashboard">لوحة التحكم</span>
-                    </li>
-                    <li data-view="projects" tabindex="0" role="button">
+                    <li class="active" data-view="projects" tabindex="0" role="button">
                         <i class="fas fa-folder-tree"></i>
                         <span data-i18n="nav_projects">المشاريع</span>
                     </li>
                     <li data-view="chat" tabindex="0" role="button">
                         <i class="fas fa-comment-dots"></i>
-                        <span data-i18n="nav_chat">المحادثة الذكية</span>
+                        <span data-i18n="nav_chat">AI Interview</span>
                     </li>
                     <li data-view="srs" tabindex="0" role="button">
                         <i class="fas fa-file-signature"></i>
-                        <span data-i18n="nav_srs">مراجعة المتطلبات</span>
+                        <span data-i18n="nav_srs">SRS Documents</span>
                     </li>
-                    <li data-view="bot-config" tabindex="0" role="button">
-                        <i class="fas fa-robot"></i>
-                        <span data-i18n="nav_bot">إعدادات البوت</span>
-                    </li>
-                    <li data-view="ai-config" tabindex="0" role="button">
+                    <li class="sidebar-divider" aria-hidden="true"></li>
+                    <li data-view="settings" tabindex="0" role="button">
                         <i class="fas fa-sliders"></i>
-                        <span data-i18n="nav_ai_config">إعدادات الذكاء الاصطناعي</span>
+                        <span data-i18n="nav_settings">الإعدادات</span>
                     </li>
                 </ul>
             </nav>
@@ -196,8 +189,39 @@
     <!-- Templates -->
     <template id="dashboard-template">
         <div class="dashboard-view">
-            <h1 class="view-title" data-i18n="welcome_title">مرحباً بك في RAGMind</h1>
+            <h1 class="view-title" data-i18n="welcome_title">مرحباً بك في Tawasul</h1>
             <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-folder"></i></div>
+                    <div class="info">
+                        <span class="label" data-i18n="stat_projects">إجمالي المشاريع</span>
+                        <span class="value" id="stat-projects-dashboard">0</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="icon"><i class="fas fa-file-alt"></i></div>
+                    <div class="info">
+                        <span class="label" data-i18n="stat_docs">المستندات</span>
+                        <span class="value" id="stat-docs-dashboard">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <section class="recent-projects">
+                <div class="section-header">
+                    <h2 data-i18n="recent_projects">المشاريع الأخيرة</h2>
+                    <a href="#" class="link" data-i18n="view_all">عرض الكل</a>
+                </div>
+                <div class="projects-grid" id="recent-projects-list-dashboard">
+                    <!-- Projects will be injected here -->
+                </div>
+            </section>
+        </div>
+    </template>
+
+    <template id="projects-template">
+        <div class="projects-view">
+            <div class="stats-grid compact-stats">
                 <div class="stat-card">
                     <div class="icon"><i class="fas fa-folder"></i></div>
                     <div class="info">
@@ -213,21 +237,6 @@
                     </div>
                 </div>
             </div>
-
-            <section class="recent-projects">
-                <div class="section-header">
-                    <h2 data-i18n="recent_projects">المشاريع الأخيرة</h2>
-                    <a href="#" class="link" data-i18n="view_all">عرض الكل</a>
-                </div>
-                <div class="projects-grid" id="recent-projects-list">
-                    <!-- Projects will be injected here -->
-                </div>
-            </section>
-        </div>
-    </template>
-
-    <template id="projects-template">
-        <div class="projects-view">
             <div class="section-header">
                 <h1 class="view-title" data-i18n="your_projects">مشاريعك</h1>
                 <button id="projects-new-project-btn" class="btn btn-primary">
@@ -246,25 +255,60 @@
             <!-- Chat Header -->
             <div class="chat-header-pro">
                 <div class="chat-header-content">
-                    <div class="chat-controls">
-                        <select id="chat-project-select" class="chat-select">
+                    <div class="chat-header-left">
+                        <div id="chat-project-title" class="chat-project-pill">المشروع: -</div>
+                    </div>
+
+                    <div class="interview-progress" id="interview-progress" style="display:none;">
+                        <div class="interview-coverage-grid">
+                            <div class="coverage-item" data-area="discovery" data-step="1" title="Discovery 0%">
+                                <span class="coverage-dot" id="coverage-discovery">1</span>
+                            </div>
+                            <div class="coverage-item" data-area="scope" data-step="2" title="Scope 0%">
+                                <span class="coverage-dot" id="coverage-scope">2</span>
+                            </div>
+                            <div class="coverage-item" data-area="users" data-step="3" title="Users 0%">
+                                <span class="coverage-dot" id="coverage-users">3</span>
+                            </div>
+                            <div class="coverage-item" data-area="features" data-step="4" title="Features 0%">
+                                <span class="coverage-dot" id="coverage-features">4</span>
+                            </div>
+                            <div class="coverage-item" data-area="constraints" data-step="5" title="Constraints 0%">
+                                <span class="coverage-dot" id="coverage-constraints">5</span>
+                            </div>
+                        </div>
+                        <div class="coverage-pcts" aria-hidden="true">
+                            <span id="coverage-pct-discovery">0%</span>
+                            <span id="coverage-pct-scope">0%</span>
+                            <span id="coverage-pct-users">0%</span>
+                            <span id="coverage-pct-features">0%</span>
+                            <span id="coverage-pct-constraints">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="chat-controls chat-controls-hidden">
+                        <select id="chat-project-select" class="chat-select" style="display: none;">
                             <option value="" data-i18n="select_project_ph">اختر مشروعاً...</option>
                         </select>
-                        <select id="chat-lang" class="chat-select chat-select-small">
+                        <select id="chat-lang" class="chat-select chat-select-small" style="display: none;">
                             <option value="ar">العربية</option>
                             <option value="en">English</option>
                         </select>
-                        <label class="chat-toggle">
-                            <input type="checkbox" id="chat-interview-toggle">
+                        <label class="chat-toggle" style="display: none;">
+                            <input type="checkbox" id="chat-interview-toggle" checked>
                             <span class="chat-toggle-slider"></span>
                             <span class="chat-toggle-label" data-i18n="interview_mode">وضع المقابلة</span>
                         </label>
-                        <button id="chat-upload-ref-btn" class="chat-upload-ref-btn" title="Upload Reference Docs">
-                            <i class="fas fa-paperclip"></i>
-                            <span class="chat-upload-ref-label" data-i18n="upload_reference_docs">رفع مستندات</span>
+                        <button id="chat-files-btn" class="chat-upload-ref-btn" title="Project Files" style="display: none;">
+                            <i class="fas fa-folder-open"></i>
+                            <span class="chat-upload-ref-label" data-i18n="project_files_btn">ملفات المشروع</span>
                         </button>
                     </div>
                     <div class="chat-header-actions">
+                        <button id="summary-toggle-btn" class="chat-clear-btn top-icon-btn" title="ملخص المتطلبات" aria-label="Toggle requirements summary" data-tooltip="ملخص المتطلبات">
+                            <i class="fas fa-table-columns"></i>
+                            <span>ملخص المتطلبات</span>
+                        </button>
                         <button id="interview-resume-btn" class="chat-clear-btn top-icon-btn" title="استكمال آخر مقابلة" aria-label="Resume last interview" data-tooltip="استكمال آخر مقابلة" disabled>
                             <i class="fas fa-rotate-left"></i>
                             <span>استكمال آخر مقابلة</span>
@@ -284,19 +328,39 @@
                 </div>
             </div>
 
+            <!-- Project Files Drawer -->
+            <div class="files-drawer" id="files-drawer" style="display:none;">
+                <div class="files-drawer-header">
+                    <h4><i class="fas fa-folder-open"></i> <span data-i18n="project_files_btn">ملفات المشروع</span></h4>
+                    <button id="files-drawer-close" class="live-doc-close" title="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="files-drawer-body">
+                    <div class="upload-zone" id="upload-zone">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <p data-i18n="upload_desc">اسحب الملفات هنا أو اضغط للاختيار</p>
+                        <span class="hint" data-i18n="upload_hint">يدعم PDF, TXT, DOCX</span>
+                        <input type="file" id="file-input" multiple hidden accept=".pdf,.txt,.docx">
+                    </div>
+                    <div class="documents-list" id="project-docs-list"></div>
+                </div>
+            </div>
+
             <!-- Messages Area -->
+
             <div class="chat-body-wrapper">
                 <div class="chat-messages-pro" id="chat-messages">
                     <div class="welcome-msg-pro">
                         <div class="welcome-icon">
                             <i class="fas fa-robot"></i>
                         </div>
-                        <h2>كيف يمكنني مساعدتك اليوم؟</h2>
-                        <p>اختر مشروعاً من الأعلى وابدأ في طرح الأسئلة حول مستنداتك.</p>
+                        <h2>لنبدأ اكتشاف المتطلبات</h2>
+                        <p>اكتب تفاصيل مشروعك وسأطرح أسئلة مرتبطة مباشرة لبناء SRS احترافي.</p>
                         <div class="welcome-suggestions">
-                            <button class="suggestion-chip">ما هو ملخص المستندات؟</button>
-                            <button class="suggestion-chip">اشرح لي المحتوى الرئيسي</button>
-                            <button class="suggestion-chip">ما هي النقاط المهمة؟</button>
+                            <button class="suggestion-chip">ما المشكلة الأساسية التي يحلها المشروع؟</button>
+                            <button class="suggestion-chip">مين المستخدمين الأساسيين وإيه أولوياتهم؟</button>
+                            <button class="suggestion-chip">ما أهم متطلبات MVP والقيود؟</button>
                         </div>
                     </div>
                 </div>
@@ -330,53 +394,6 @@
                 </div>
             </div>
 
-            <!-- Interview Coverage Indicators -->
-            <div class="interview-progress" id="interview-progress" style="display:none;">
-                <div class="interview-coverage-grid">
-                    <div class="coverage-item" data-area="discovery">
-                        <div class="coverage-label"><span data-i18n="stage_discovery">الاستكشاف</span></div>
-                        <div class="coverage-bar-track">
-                            <div class="coverage-bar-fill" id="coverage-discovery" style="width: 0%"></div>
-                        </div>
-                        <span class="coverage-pct" id="coverage-pct-discovery">0%</span>
-                    </div>
-                    <div class="coverage-item" data-area="scope">
-                        <div class="coverage-label"><span data-i18n="stage_scope">النطاق</span></div>
-                        <div class="coverage-bar-track">
-                            <div class="coverage-bar-fill" id="coverage-scope" style="width: 0%"></div>
-                        </div>
-                        <span class="coverage-pct" id="coverage-pct-scope">0%</span>
-                    </div>
-                    <div class="coverage-item" data-area="users">
-                        <div class="coverage-label"><span data-i18n="stage_users">المستخدمون</span></div>
-                        <div class="coverage-bar-track">
-                            <div class="coverage-bar-fill" id="coverage-users" style="width: 0%"></div>
-                        </div>
-                        <span class="coverage-pct" id="coverage-pct-users">0%</span>
-                    </div>
-                    <div class="coverage-item" data-area="features">
-                        <div class="coverage-label"><span data-i18n="stage_features">الميزات</span></div>
-                        <div class="coverage-bar-track">
-                            <div class="coverage-bar-fill" id="coverage-features" style="width: 0%"></div>
-                        </div>
-                        <span class="coverage-pct" id="coverage-pct-features">0%</span>
-                    </div>
-                    <div class="coverage-item" data-area="constraints">
-                        <div class="coverage-label"><span data-i18n="stage_constraints">القيود</span></div>
-                        <div class="coverage-bar-track">
-                            <div class="coverage-bar-fill" id="coverage-constraints" style="width: 0%"></div>
-                        </div>
-                        <span class="coverage-pct" id="coverage-pct-constraints">0%</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="interview-assist-bar" id="interview-assist-bar" style="display:none;">
-                <div class="interview-assist-head">
-                    <span id="interview-progress-label">0%</span>
-                </div>
-            </div>
-
         </div>
     </template>
 
@@ -390,6 +407,11 @@
                 <div class="srs-actions">
                     <select id="srs-project-select" class="srs-select">
                         <option value="" data-i18n="select_project_ph">اختر مشروعاً...</option>
+                    </select>
+                    <select id="srs-export-format" class="srs-select srs-export-format">
+                        <option value="pdf">PDF</option>
+                        <option value="word">Word</option>
+                        <option value="markdown">Markdown</option>
                     </select>
                     <button id="srs-refresh-btn" class="btn btn-secondary">
                         <i class="fas fa-rotate"></i>
@@ -408,7 +430,9 @@
                         <div class="status-pill" id="srs-status">مسودة أولية</div>
                         <div class="srs-meta" id="srs-updated">آخر تحديث: اليوم</div>
                     </div>
-                    <div id="srs-sections" class="srs-sections"></div>
+                    <div class="srs-paper-canvas">
+                        <div id="srs-sections" class="srs-sections"></div>
+                    </div>
                 </section>
 
                 <aside class="srs-summary">
@@ -438,52 +462,39 @@
         </div>
     </template>
 
-    <template id="project-detail-template">
-        <div class="project-detail-view">
-            <div class="project-header">
-                <button class="back-btn" id="back-to-projects"><i class="fas fa-arrow-left"></i></button>
-                <h1 id="project-name-title">اسم المشروع</h1>
-            </div>
-
-            <div class="project-content-grid">
-                <div class="interview-cta-section">
-                    <button id="project-start-interview-btn" class="btn btn-primary w-100">
-                        <i class="fas fa-comments"></i>
-                        <span data-i18n="start_interview_btn">ابدأ المقابلة الذكية</span>
-                    </button>
-                    <p class="interview-cta-hint" data-i18n="interview_cta_hint">ابدأ محادثة مع محلل الأعمال الذكي لبناء مستند المتطلبات</p>
+    <template id="ai-config-template">
+        <div class="config-view">
+            <h1 class="view-title" data-i18n="ai_config_title">نموذج الذكاء الاصطناعي</h1>
+            <div class="config-card">
+                <p class="config-desc" data-i18n="ai_settings_desc">اختر مزود التوليد.</p>
+                <div class="config-section">
+                    <label for="ai-gen-provider" class="config-label" data-i18n="gen_provider_label">مزود التوليد</label>
+                    <select id="ai-gen-provider" class="form-control"></select>
                 </div>
-
-                <div class="upload-section">
-                    <h3 data-i18n="upload_title">رفع مستندات جديدة</h3>
-                    <p class="upload-optional-hint" data-i18n="upload_optional">(اختياري) ارفع مستندات مرجعية لدعم المقابلة</p>
-                    <div class="upload-zone" id="upload-zone">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <p data-i18n="upload_desc">اسحب الملفات هنا أو اضغط للاختيار</p>
-                        <span class="hint">يدعم PDF, TXT, DOCX</span>
-                        <input type="file" id="file-input" multiple hidden accept=".pdf,.txt,.docx">
-                    </div>
-                </div>
-
-                <div class="documents-section">
-                    <h3 data-i18n="docs_title">المستندات الحالية</h3>
-                    <div class="documents-list" id="project-docs-list">
-                        <!-- Documents will be injected here -->
-                    </div>
-                </div>
+                <button id="save-ai-config-btn" class="btn btn-primary mt-4">
+                    <i class="fas fa-save"></i>
+                    <span data-i18n="save_settings">حفظ الإعدادات</span>
+                </button>
             </div>
         </div>
     </template>
 
-    <template id="bot-config-template">
-        <div class="bot-config-view">
-            <h1 class="view-title" data-i18n="bot_settings_title">إعدادات بوت التليجرام</h1>
-
+    <template id="settings-template">
+        <div class="settings-view">
+            <h1 class="view-title" data-i18n="settings_title">الإعدادات</h1>
             <div class="config-card">
                 <div class="config-section">
+                    <h3 data-i18n="settings_tab_ai">نموذج الذكاء الاصطناعي</h3>
+                    <p class="config-desc" data-i18n="ai_settings_desc">اختر مزود التوليد.</p>
+                    <select id="settings-ai-gen-provider" class="form-control"></select>
+                    <button id="settings-save-ai-config-btn" class="btn btn-primary mt-4">
+                        <i class="fas fa-save"></i>
+                        <span data-i18n="save_settings">حفظ الإعدادات</span>
+                    </button>
+                </div>
+                <div class="config-section">
                     <h3 data-i18n="bot_active_project">المشروع النشط</h3>
-                    <p class="config-desc" data-i18n="bot_active_project_desc">اختر المشروع الذي سيقوم البوت بالإجابة
-                        منه.</p>
+                    <p class="config-desc" data-i18n="bot_active_project_desc">اختر المشروع الذي سيقوم البوت بالإجابة منه.</p>
                     <select id="bot-active-project" class="form-control">
                         <option value="">اختر مشروعاً...</option>
                     </select>
@@ -492,16 +503,13 @@
                         <span data-i18n="save_settings">حفظ الإعدادات</span>
                     </button>
                 </div>
-
                 <div class="config-section mt-4">
                     <h3 data-i18n="bot_profile">ملف البوت</h3>
                     <p class="config-desc" data-i18n="bot_profile_desc">تحديث اسم البوت على تليجرام.</p>
-
                     <div class="form-group">
                         <label for="bot-name-input" data-i18n="bot_name">اسم البوت</label>
-                        <input type="text" id="bot-name-input" class="form-control" placeholder="RAGMind Bot">
+                        <input type="text" id="bot-name-input" class="form-control" placeholder="Tawasul Bot">
                     </div>
-
                     <button id="update-bot-profile-btn" class="btn btn-primary mt-4">
                         <i class="fas fa-user-edit"></i>
                         <span data-i18n="update_profile">تحديث الملف الشخصي</span>
@@ -511,48 +519,9 @@
         </div>
     </template>
 
-    <template id="ai-config-template">
-        <div class="ai-config-view">
-            <h1 class="view-title" data-i18n="ai_settings_title">إعدادات النماذج</h1>
-
-            <div class="config-card">
-                <p class="config-desc" data-i18n="ai_settings_desc">اختر مزود التوليد ومزود التضمين.</p>
-
-                <!-- Providers Group -->
-                <div class="config-group">
-                    <div class="config-group-title"><i class="fas fa-server"></i> <span data-i18n="config_group_providers">المزودون</span></div>
-
-                    <div class="config-section">
-                        <label for="ai-gen-provider" class="config-label" data-i18n="gen_provider_label">مزود التوليد</label>
-                        <select id="ai-gen-provider" class="form-control"></select>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="embed_provider_label">مزود التضمين</label>
-                        <select id="ai-embed-provider" class="form-control"></select>
-                    </div>
-
-                    <div class="config-section mt-4">
-                        <label class="config-label" data-i18n="embedding_size_label">أبعاد التضمين</label>
-                        <select id="embedding-size" class="form-control">
-                            <option value="256">256</option>
-                            <option value="512">512</option>
-                            <option value="1024">1024</option>
-                            <option value="2048">2048</option>
-                        </select>
-                    </div>
-                </div>
-
-                <button id="save-ai-config-btn" class="btn btn-primary mt-4">
-                    <i class="fas fa-save"></i>
-                    <span data-i18n="save_settings">حفظ الإعدادات</span>
-                </button>
-            </div>
-        </div>
-    </template>
-
     <!-- Scripts -->
-    <script src="app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <script src="app.js?v=20260223-3"></script>
 </body>
 
 </html>

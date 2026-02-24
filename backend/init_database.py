@@ -26,7 +26,7 @@ async def create_database_if_not_exists():
     from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
     
     # Parse connection string to get credentials for default 'postgres' db
-    # Example: postgresql+asyncpg://ragmind:ragmind123@localhost:5555/ragmind
+    # Example: postgresql+asyncpg://tawasul:tawasul123@localhost:5555/tawasul
     db_url = settings.database_url.replace("postgresql+asyncpg://", "")
     auth, rest = db_url.split("@")
     user, password = auth.split(":")
@@ -70,7 +70,7 @@ async def create_default_user():
     from backend.database.connection import async_session_maker
 
     async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.email == "admin@ragmind.com"))
+        result = await session.execute(select(User).where(User.email == "admin@tawasul.com"))
         if result.scalar_one_or_none() is not None:
             logger.info("Default admin user already exists")
             return
@@ -78,13 +78,13 @@ async def create_default_user():
         password_hash = bcrypt.hashpw("admin123".encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
         user = User(
             name="Admin",
-            email="admin@ragmind.com",
+            email="admin@tawasul.com",
             password_hash=password_hash,
             role="admin"
         )
         session.add(user)
         await session.commit()
-        logger.info("✅ Default admin user created (admin@ragmind.com / admin123)")
+        logger.info("✅ Default admin user created (admin@tawasul.com / admin123)")
 
 
 async def main():

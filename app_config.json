@@ -1,5 +1,5 @@
 {
-  "llm_provider": "gemini",
+  "llm_provider": "groq-llama-3.3-70b-versatile",
   "embedding_provider": "gemini",
   "retrieval_top_k": 20,
   "chunk_strategy": "parent_child",
@@ -13,6 +13,5 @@
   "retrieval_rerank_enabled": true,
   "retrieval_rerank_top_k": 10,
   "query_rewrite_enabled": true,
-  "vector_db_provider": "qdrant",
   "voyage_output_dimension": 1024
 }

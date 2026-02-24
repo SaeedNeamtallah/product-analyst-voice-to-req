@@ -1,32 +1,33 @@
 """
-Dynamic slot-filling state machine for SRS requirements extraction.
+Semantic Evaluator for SRS requirements extraction.
 
-Runs rule-based analysis on each conversation turn to continuously
-fill SRS slots (ambiguity, contradictions, coverage gaps, scope/budget
-risks) *during* the conversation rather than at the end.
+Uses LLM to evaluate ambiguity, contradictions, coverage gaps, scope/budget
+risks during the conversation.
 """
 from __future__ import annotations
 
-import re
+import json
+import logging
 from typing import Any, Dict, List
 
+from pydantic import BaseModel, Field
 
-class SlotFillingStateMachine:
-    """Dynamic state machine that continuously fills SRS requirement slots.
+from backend.providers.llm.factory import LLMProviderFactory
 
-    On every conversation turn it detects ambiguity, contradictions,
-    scope/budget risks, and coverage gaps -- feeding the results into
-    the interview agent so the SRS JSON is populated incrementally.
-    """
+logger = logging.getLogger(__name__)
 
-    AMBIGUOUS_AR = {"كويس", "قوي", "سريع", "عادي", "كتير", "بسيط", "ممتاز", "احترافي"}
-    AMBIGUOUS_EN = {"good", "fast", "strong", "normal", "many", "simple", "best", "powerful", "quick"}
-    SCOPE_AR = {"أوبر", "لوحة", "مدفوعات", "متعدد", "لحظي", "داشبورد", "تقارير"}
-    SCOPE_EN = {"uber", "marketplace", "real-time", "dashboard", "payments", "multi-tenant", "reports"}
-    BUDGET_PATTERN = re.compile(r"\b(\d{2,})(\s?\$|\s?usd|\s?دولار)?\b", re.IGNORECASE)
+class SemanticEvaluation(BaseModel):
+    is_ambiguous: bool = Field(description="True if the user's answer is vague or lacks specific details.")
+    ambiguity_reason: str = Field(description="Reason for ambiguity, if any.")
+    missing_scope_risk: bool = Field(description="True if there is a risk of missing scope or budget constraints.")
+    contradiction_detected: bool = Field(description="True if the user's answer contradicts previous statements.")
+    contradiction_reason: str = Field(description="Reason for contradiction, if any.")
+
+class SemanticEvaluator:
+    """LLM-based evaluator for semantic reasoning of user inputs."""
 
     @classmethod
-    def analyze(
+    async def analyze(
         cls,
         language: str,
         latest_user_answer: str,
@@ -34,58 +35,73 @@ class SlotFillingStateMachine:
         last_coverage: Dict[str, Any] | None,
     ) -> Dict[str, Any]:
         answer = str(latest_user_answer or "").strip()
-        lower = answer.lower()
-        summary_text = str(last_summary or {}).lower()
-        coverage = last_coverage if isinstance(last_coverage, dict) else {}
+        summary_text = json.dumps(last_summary or {}, ensure_ascii=False)
+        
+        system_prompt = (
+            "You are an expert business analyst evaluating a user's response for a software project requirements gathering interview.\n"
+            "Evaluate the user's latest answer against the current summary for ambiguity, scope risks, and contradictions.\n"
+            "Return a JSON object matching the requested schema."
+        )
+        
+        user_prompt = (
+            f"Language: {language}\n"
+            f"Latest Answer: {answer}\n"
+            f"Current Summary: {summary_text}\n"
+        )
 
-        ambiguity_terms = cls.AMBIGUOUS_AR if language == "ar" else cls.AMBIGUOUS_EN
-        scope_terms = cls.SCOPE_AR if language == "ar" else cls.SCOPE_EN
-
-        ambiguity_hits = [term for term in ambiguity_terms if term in lower]
-        scope_hits = [term for term in scope_terms if term in lower]
-        budget_hits = cls.BUDGET_PATTERN.findall(answer)
-
-        contradiction_detected = False
-        contradiction_reason = ""
-
-        if ("without" in lower or "بدون" in lower) and ("database" in lower or "قاعدة" in lower):
-            if "report" in summary_text or "dashboard" in summary_text or "تقارير" in summary_text:
-                contradiction_detected = True
-                contradiction_reason = (
-                    "تعارض: تم طلب تقارير سابقاً مع استبعاد قاعدة البيانات حالياً."
-                    if language == "ar"
-                    else "Conflict: reports were requested earlier while database is now excluded."
+        try:
+            provider = LLMProviderFactory.get_provider()
+            raw_response, _ = await provider.generate_text(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=0.1,
+                max_tokens=500,
+                response_format={"type": "json_object"}
+            )
+            
+            # Parse the JSON response
+            try:
+                parsed_json = json.loads(raw_response)
+                eval_result = SemanticEvaluation(**parsed_json)
+            except Exception as e:
+                logger.error(f"Failed to parse SemanticEvaluation: {e}")
+                eval_result = SemanticEvaluation(
+                    is_ambiguous=False,
+                    ambiguity_reason="",
+                    missing_scope_risk=False,
+                    contradiction_detected=False,
+                    contradiction_reason=""
                 )
 
-        scope_budget_risk = bool(scope_hits and budget_hits)
-        if scope_budget_risk and not contradiction_reason:
-            contradiction_reason = (
-                "اتساع النطاق مع ميزانية منخفضة قد يهدد تنفيذ MVP."
-                if language == "ar"
-                else "Broad scope with low budget can threaten MVP feasibility."
-            )
+            low_areas: List[str] = []
+            coverage = last_coverage if isinstance(last_coverage, dict) else {}
+            for area in ("discovery", "scope", "users", "features", "constraints"):
+                if float(coverage.get(area, 0) or 0) < 35:
+                    low_areas.append(area)
 
-        low_areas: List[str] = []
-        for area in ("discovery", "scope", "users", "features", "constraints"):
-            if float(coverage.get(area, 0) or 0) < 35:
-                low_areas.append(area)
+            warnings: List[str] = []
+            if eval_result.is_ambiguous and eval_result.ambiguity_reason:
+                warnings.append(eval_result.ambiguity_reason)
+            if eval_result.contradiction_detected and eval_result.contradiction_reason:
+                warnings.append(eval_result.contradiction_reason)
 
-        warnings: List[str] = []
-        if ambiguity_hits:
-            warnings.append(
-                "تم رصد عبارات عامة؛ فضّل متطلبات قابلة للقياس."
-                if language == "ar"
-                else "Generic wording detected; prefer measurable requirements."
-            )
-        if contradiction_reason:
-            warnings.append(contradiction_reason)
-
-        return {
-            "ambiguity_detected": bool(ambiguity_hits),
-            "ambiguity_terms": ambiguity_hits[:4],
-            "scope_budget_risk": scope_budget_risk,
-            "contradiction_detected": contradiction_detected,
-            "reason": contradiction_reason,
-            "low_covered_areas": low_areas[:3],
-            "warnings": warnings[:4],
-        }
+            return {
+                "ambiguity_detected": eval_result.is_ambiguous,
+                "ambiguity_terms": [eval_result.ambiguity_reason] if eval_result.is_ambiguous else [],
+                "scope_budget_risk": eval_result.missing_scope_risk,
+                "contradiction_detected": eval_result.contradiction_detected,
+                "reason": eval_result.contradiction_reason,
+                "low_covered_areas": low_areas[:3],
+                "warnings": warnings[:4],
+            }
+        except Exception as e:
+            logger.error(f"SemanticEvaluator failed: {e}")
+            return {
+                "ambiguity_detected": False,
+                "ambiguity_terms": [],
+                "scope_budget_risk": False,
+                "contradiction_detected": False,
+                "reason": "",
+                "low_covered_areas": [],
+                "warnings": [],
+            }

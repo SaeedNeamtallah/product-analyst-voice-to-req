@@ -1,11 +1,26 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    container_name: tawasul-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   postgres:
-    image: pgvector/pgvector:pg16
-    container_name: ragmind-postgres
+    image: postgres:16-alpine
+    container_name: tawasul-postgres
     environment:
-      POSTGRES_USER: ragmind
-      POSTGRES_PASSWORD: ragmind123
-      POSTGRES_DB: ragmind
+      POSTGRES_USER: tawasul
+      POSTGRES_PASSWORD: tawasul123
+      POSTGRES_DB: tawasul
       POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "${POSTGRES_HOST_PORT:-5555}:5432"
@@ -13,7 +28,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ragmind -d ragmind"]
+      test: ["CMD-SHELL", "pg_isready -U tawasul -d tawasul"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -21,3 +36,4 @@ services:
 
 volumes:
   postgres_data:
+  redis_data:

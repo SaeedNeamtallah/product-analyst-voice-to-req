@@ -1,8 +1,12 @@
 import os
 from pathlib import Path
 
-# Path to .env file
-env_file = Path("c:/Users/abdul/Documents/EELU/RAGMind/.env")
+env_file = Path(".env")
+new_token = str(os.getenv("TELEGRAM_BOT_TOKEN", "")).strip()
+
+if not new_token:
+    print("✗ TELEGRAM_BOT_TOKEN is not set in environment")
+    raise SystemExit(1)
 
 # Read current content
 if env_file.exists():
@@ -13,12 +17,12 @@ if env_file.exists():
     token_found = False
     for i, line in enumerate(lines):
         if line.startswith('TELEGRAM_BOT_TOKEN='):
-            lines[i] = 'TELEGRAM_BOT_TOKEN=8264239620:AAEjhI1736D8fRwpW5YBNqtiUj0gL3xFcZA\n'
+            lines[i] = f'TELEGRAM_BOT_TOKEN={new_token}\n'
             token_found = True
             break
     
     if not token_found:
-        lines.append('TELEGRAM_BOT_TOKEN=8264239620:AAEjhI1736D8fRwpW5YBNqtiUj0gL3xFcZA\n')
+        lines.append(f'TELEGRAM_BOT_TOKEN={new_token}\n')
     
     # Write back
     with open(env_file, 'w', encoding='utf-8') as f:

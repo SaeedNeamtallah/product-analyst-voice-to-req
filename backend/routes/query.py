@@ -8,8 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from backend.config import settings
-from backend.runtime_config import get_runtime_value
 from backend.database import get_db
 from backend.database.models import Project, User
 from backend.routes.auth import get_current_user
@@ -74,17 +72,7 @@ async def query_project(
             db=db,
             project_id=project_id,
             query=query_data.query,
-            top_k=max(
-                1,
-                min(
-                    int(
-                        query_data.top_k
-                        if query_data.top_k is not None
-                        else get_runtime_value("retrieval_top_k", settings.retrieval_top_k)
-                    ),
-                    settings.retrieval_top_k_max
-                )
-            ),
+            top_k=int(query_data.top_k or 5),
             language=query_data.language,
             asset_id=query_data.asset_id
         )
@@ -110,17 +98,7 @@ async def query_project_stream(
     """
     await _verify_project_access(db, project_id, user)
     query_controller = get_query_controller()
-    top_k = max(
-        1,
-        min(
-            int(
-                query_data.top_k
-                if query_data.top_k is not None
-                else get_runtime_value("retrieval_top_k", settings.retrieval_top_k)
-            ),
-            settings.retrieval_top_k_max,
-        ),
-    )
+    top_k = int(query_data.top_k or 5)
 
     return StreamingResponse(
         query_controller.answer_query_stream(

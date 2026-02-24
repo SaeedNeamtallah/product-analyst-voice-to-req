@@ -39,7 +39,7 @@ class MessageOut(BaseModel):
 
 class LivePatchRequest(BaseModel):
     language: str = Field(default="ar", pattern="^(ar|en)$")
-    last_summary: Dict[str, List[str]] | None = None
+    last_summary: Dict[str, Any] | None = None
     last_coverage: Dict[str, float] | None = None
 
 
@@ -56,18 +56,26 @@ async def _get_user_project(db: AsyncSession, project_id: int, user: User) -> Pr
 @router.get("/projects/{project_id}/messages", response_model=List[MessageOut])
 async def get_messages(
     project_id: int,
+    limit: int = 120,
+    before_id: int | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Retrieve all chat messages for a project, ordered by creation time."""
     await _get_user_project(db, project_id, user)
+    safe_limit = max(1, min(300, int(limit)))
     stmt = (
         select(ChatMessage)
         .where(ChatMessage.project_id == project_id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.id.desc())
+        .limit(safe_limit)
     )
+    if before_id is not None:
+        stmt = stmt.where(ChatMessage.id < int(before_id))
+
     result = await db.execute(stmt)
-    rows = result.scalars().all()
+    rows = list(result.scalars().all())
+    rows.reverse()
     return [
         MessageOut(
             id=r.id,
@@ -90,6 +98,15 @@ async def add_messages(
     await _get_user_project(db, project_id, user)
     if not payload.messages:
         raise HTTPException(status_code=400, detail="No messages provided")
+
+    for msg in payload.messages:
+        metadata = msg.metadata if isinstance(msg.metadata, dict) else {}
+        is_stt_user_message = msg.role == "user" and str(metadata.get("source", "")).lower() == "stt"
+        if is_stt_user_message and not bool(metadata.get("transcript_confirmed")):
+            raise HTTPException(
+                status_code=400,
+                detail="STT transcript requires explicit human confirmation before submission",
+            )
 
     for msg in payload.messages:
         record = ChatMessage(
@@ -137,10 +154,12 @@ async def refresh_live_patch(
     messages_stmt = (
         select(ChatMessage)
         .where(ChatMessage.project_id == project_id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.id.desc())
+        .limit(120)
     )
     messages_result = await db.execute(messages_stmt)
     messages = list(messages_result.scalars().all())
+    messages.reverse()
 
     metadata = project.extra_metadata if isinstance(project.extra_metadata, dict) else {}
     stored_state = metadata.get("live_patch_state") if isinstance(metadata.get("live_patch_state"), dict) else {}
@@ -153,7 +172,7 @@ async def refresh_live_patch(
     if not isinstance(last_coverage, dict):
         last_coverage = stored_state.get("coverage") if isinstance(stored_state.get("coverage"), dict) else {}
 
-    result = LivePatchService.build_from_messages(
+    result = await LivePatchService.build_from_messages(
         language=payload.language,
         messages=messages,
         last_summary=last_summary,
