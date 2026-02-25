@@ -296,7 +296,7 @@ const i18n = {
 };
 
 const INTERVIEW_AREAS = ['discovery', 'scope', 'users', 'features', 'constraints'];
-const ADMIN_ONLY_VIEWS = new Set(['settings']);
+const ADMIN_ONLY_VIEWS = new Set([]);
 const IDEA_TEMPLATES = {
     ecommerce: {
         ar: {
@@ -1301,8 +1301,8 @@ function normalizeInterviewText(value) {
     return String(value || '')
         .trim()
         .toLowerCase()
-    .replaceAll(/\s+/g, ' ')
-    .replaceAll(/[?.!،؛:]+$/g, '');
+        .replaceAll(/\s+/g, ' ')
+        .replaceAll(/[?.!،؛:]+$/g, '');
 }
 
 function getAverageCoverage(coverage) {
@@ -1417,28 +1417,36 @@ function getQuestionAwareFallbackOptions(questionText = '', stage = 'discovery')
 
     const intentFallback = isAr
         ? [
-            { keys: ['مقياس', 'نجاح', 'kpi', 'مؤشر'], choices: [
-                'مؤشر النجاح الرئيسي: تقليل زمن التنفيذ ورفع دقة الإنجاز ضمن فترة زمنية محددة.',
-                'سنقيس النجاح عبر KPI أسبوعي واضح: زمن الدورة، نسبة الأخطاء، والالتزام بالـSLA.',
-                'الهدف الكمي المقترح: خفض زمن المعالجة ورفع جودة التنفيذ بصورة قابلة للقياس.'
-            ] },
-            { keys: ['قبول', 'معيار', 'acceptance'], choices: [
-                'معيار القبول: تنفيذ السيناريو الأساسي كاملًا بدون تدخل يدوي غير مخطط.',
-                'يُقبل السيناريو إذا أنهى المستخدم المهمة بعدد خطوات محدود وبنسبة أخطاء منخفضة.',
-                'المعيار يشمل صحة البيانات، زمن الاستجابة، وتتبع الأحداث في سجل التدقيق.'
-            ] }
+            {
+                keys: ['مقياس', 'نجاح', 'kpi', 'مؤشر'], choices: [
+                    'مؤشر النجاح الرئيسي: تقليل زمن التنفيذ ورفع دقة الإنجاز ضمن فترة زمنية محددة.',
+                    'سنقيس النجاح عبر KPI أسبوعي واضح: زمن الدورة، نسبة الأخطاء، والالتزام بالـSLA.',
+                    'الهدف الكمي المقترح: خفض زمن المعالجة ورفع جودة التنفيذ بصورة قابلة للقياس.'
+                ]
+            },
+            {
+                keys: ['قبول', 'معيار', 'acceptance'], choices: [
+                    'معيار القبول: تنفيذ السيناريو الأساسي كاملًا بدون تدخل يدوي غير مخطط.',
+                    'يُقبل السيناريو إذا أنهى المستخدم المهمة بعدد خطوات محدود وبنسبة أخطاء منخفضة.',
+                    'المعيار يشمل صحة البيانات، زمن الاستجابة، وتتبع الأحداث في سجل التدقيق.'
+                ]
+            }
         ]
         : [
-            { keys: ['metric', 'success', 'kpi'], choices: [
-                'Primary success metric is measurable cycle-time reduction with improved completion quality.',
-                'We should track weekly KPIs: cycle time, error rate, and SLA adherence.',
-                'A strong target is quantifiable speed and quality improvement within a defined period.'
-            ] },
-            { keys: ['acceptance', 'criteria'], choices: [
-                'Acceptance criteria should validate full end-to-end completion without unplanned manual workarounds.',
-                'A flow is accepted when users complete it in limited steps with low error rate.',
-                'Criteria must include data correctness, response targets, and audit traceability.'
-            ] }
+            {
+                keys: ['metric', 'success', 'kpi'], choices: [
+                    'Primary success metric is measurable cycle-time reduction with improved completion quality.',
+                    'We should track weekly KPIs: cycle time, error rate, and SLA adherence.',
+                    'A strong target is quantifiable speed and quality improvement within a defined period.'
+                ]
+            },
+            {
+                keys: ['acceptance', 'criteria'], choices: [
+                    'Acceptance criteria should validate full end-to-end completion without unplanned manual workarounds.',
+                    'A flow is accepted when users complete it in limited steps with low error rate.',
+                    'Criteria must include data correctness, response targets, and audit traceability.'
+                ]
+            }
         ];
 
     const matchedIntent = intentFallback.find((entry) => entry.keys.some((key) => q.includes(normalizeInterviewText(key))));
@@ -1935,8 +1943,8 @@ function renderSrsDraft(content, draftMeta) {
                     </div>
                     <ul class="activity-diagram-list">
                         ${activityDiagram
-                            .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
-                            .join('')}
+                .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
+                .join('')}
                     </ul>
                 </article>
             `
@@ -1948,8 +1956,8 @@ function renderSrsDraft(content, draftMeta) {
                             <summary>${textFlowLabel}</summary>
                             <ul class="activity-diagram-list">
                                 ${activityDiagram
-                                    .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
-                                    .join('')}
+                .map((line) => `<li dir="auto">${escapeHtml(String(line).replaceAll(/\s*->\s*/g, ' → '))}</li>`)
+                .join('')}
                             </ul>
                         </details>
                     `
@@ -2325,8 +2333,8 @@ function toMarkdownFromSrs(draftContent, draftMeta) {
     if (userStories.length) {
         lines.push(`## ${state.lang === 'ar' ? 'قصص المستخدمين ومعايير القبول' : 'User Stories & Acceptance Criteria'}`);
         userStories.forEach(s => {
-            const asA    = state.lang === 'ar' ? 'بوصفي' : 'As a';
-            const iWant  = state.lang === 'ar' ? 'أريد' : 'I want to';
+            const asA = state.lang === 'ar' ? 'بوصفي' : 'As a';
+            const iWant = state.lang === 'ar' ? 'أريد' : 'I want to';
             const soThat = state.lang === 'ar' ? 'حتى أتمكن من' : 'so that';
             lines.push(`- **${asA}** ${s.role || ''}, **${iWant}** ${s.action || ''}, **${soThat}** ${s.goal || ''}`);
             (s.acceptance_criteria || []).forEach(ac => lines.push(`  - ✓ ${ac}`));
@@ -3058,7 +3066,7 @@ async function handleNewProject(defaultTemplateId = '') {
             state.lastInterviewSignals = null;
             state.lastLivePatch = null;
             state.lastCycleTrace = null;
-                state.lastTopicNavigation = null;
+            state.lastTopicNavigation = null;
             switchView('chat');
         } catch (error) {
             console.error('Create Project Error:', error);
@@ -3379,16 +3387,16 @@ async function openInterviewReviewModal(projectId, language, interviewResult) {
         <div class="interview-review-box">
             <p class="chat-disclaimer">${escapeHtml(t.interview_privacy)}</p>
             ${INTERVIEW_AREAS.map((area) => {
-                const label = i18n[state.lang][`stage_${area}`] || area;
-                const items = Array.isArray(summary[area]) ? summary[area] : [];
-                const percent = Math.round(Number(coverage[area] || 0));
-                return `
+        const label = i18n[state.lang][`stage_${area}`] || area;
+        const items = Array.isArray(summary[area]) ? summary[area] : [];
+        const percent = Math.round(Number(coverage[area] || 0));
+        return `
                     <div class="form-group">
                         <label>${escapeHtml(label)} (${percent}%)</label>
                         <textarea class="form-control interview-review-area" data-area="${area}" rows="4" placeholder="${state.lang === 'ar' ? 'كل سطر = نقطة متطلب' : 'Each line = one requirement item'}">${escapeHtml(items.join('\n'))}</textarea>
                     </div>
                 `;
-            }).join('')}
+    }).join('')}
             <p class="chat-disclaimer">${escapeHtml(t.interview_next_step)}</p>
             <button id="interview-final-submit" class="btn btn-primary w-100 mt-4">
                 <i class="fas fa-check-circle"></i>
@@ -3519,7 +3527,7 @@ function addChatMessage(role, text, isThinking = false) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `chat-msg-pro ${role}-msg-pro`;
     msgDiv.id = `msg-${id}`;
-    
+
     const isUser = role === 'user';
     const userName = state.lang === 'ar' ? 'أنت' : 'You';
     const authorName = isUser ? userName : 'Tawasul';
@@ -3528,10 +3536,10 @@ function addChatMessage(role, text, isThinking = false) {
     const thinkingStageHtml = state.interviewMode && state.interviewStage
         ? `<div class="thinking-stage-label"><i class="fas fa-brain"></i> ${thinkingStageLabel} <strong>${stageValue}</strong></div>`
         : '';
-    
+
     // Detect text direction
     const textDir = detectTextDirection(text);
-    
+
     msgDiv.innerHTML = `
         <div class="msg-inner">
             <div class="msg-avatar-pro">
@@ -3544,13 +3552,13 @@ function addChatMessage(role, text, isThinking = false) {
             </div>
         </div>
     `;
-    
+
     if (!isUser && !isThinking) {
         const msgText = msgDiv.querySelector('.msg-text');
         msgText.innerHTML = formatAnswerHtml(text) || escapeHtml(text);
         msgText.dir = textDir;
     }
-    
+
     messagesContainer.appendChild(msgDiv);
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     return id;
@@ -3559,11 +3567,11 @@ function addChatMessage(role, text, isThinking = false) {
 function escapeHtml(value) {
     if (value == null) return '';
     return String(value)
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#39;');
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
 }
 
 function detectTextDirection(text) {
@@ -3677,8 +3685,8 @@ function formatAnswerHtml(text) {
 function formatInlineMarkdown(value) {
     const escaped = escapeHtml(value);
     return escaped
-    .replaceAll(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replaceAll(/`([^`]+)`/g, '<code>$1</code>');
+        .replaceAll(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replaceAll(/`([^`]+)`/g, '<code>$1</code>');
 }
 
 let _resizeRafId = null;
@@ -4290,16 +4298,16 @@ function buildLiveDocAlertsHtml(alerts) {
     return `
         <div class="live-doc-alerts">
             ${alerts.map((alert) => {
-                const severity = String(alert?.severity || 'info');
-                const title = escapeHtml(String(alert?.title || 'Alert'));
-                const msg = escapeHtml(String(alert?.message || ''));
-                return `
+        const severity = String(alert?.severity || 'info');
+        const title = escapeHtml(String(alert?.title || 'Alert'));
+        const msg = escapeHtml(String(alert?.message || ''));
+        return `
                     <div class="live-doc-alert live-doc-alert-${severity}">
                         <div class="live-doc-alert-title">${title}</div>
                         <div class="live-doc-alert-text">${msg}</div>
                     </div>
                 `;
-            }).join('')}
+    }).join('')}
         </div>
     `;
 }
@@ -4334,15 +4342,15 @@ function buildLiveDocTraceHtml(trace) {
             </div>
             <div class="live-doc-trace-steps">
                 ${trace.steps.map((step, idx) => {
-                    const name = escapeHtml(String(step?.name || `step-${idx + 1}`));
-                    const text = escapeHtml(String(step?.summary || ''));
-                    return `
+        const name = escapeHtml(String(step?.name || `step-${idx + 1}`));
+        const text = escapeHtml(String(step?.summary || ''));
+        return `
                         <div class="live-doc-trace-step">
                             <div class="live-doc-trace-step-name">${idx + 1}. ${name}</div>
                             <div class="live-doc-trace-step-text">${text}</div>
                         </div>
                     `;
-                }).join('')}
+    }).join('')}
             </div>
         </div>
     `;
@@ -4354,10 +4362,10 @@ function buildLiveDocRemovedHtml(removedEvents) {
         <div class="live-doc-plan">
             <div class="live-doc-plan-row"><strong>${state.lang === 'ar' ? 'حقول تمت إزالتها:' : 'Removed fields:'}</strong></div>
             ${removedEvents.slice(0, 5).map((event) => {
-                const path = escapeHtml(String(event?.field_path || ''));
-                const value = escapeHtml(String(event?.value || ''));
-                return `<div class="live-doc-plan-row live-doc-removed-item">${path}: ${value}</div>`;
-            }).join('')}
+        const path = escapeHtml(String(event?.field_path || ''));
+        const value = escapeHtml(String(event?.value || ''));
+        return `<div class="live-doc-plan-row live-doc-removed-item">${path}: ${value}</div>`;
+    }).join('')}
         </div>
     `;
 }

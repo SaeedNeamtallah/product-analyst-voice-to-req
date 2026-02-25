@@ -17,20 +17,15 @@ class BotConfig(BaseModel):
     active_project_id: Optional[int] = None
 
 
-def _require_admin(user: User = Depends(get_current_user)) -> User:
-    if user.role != "admin":
-        raise HTTPException(status_code=403, detail="Admin access required")
-    return user
-
 @router.get("/config")
-async def get_bot_config(_user: User = Depends(_require_admin)):
+async def get_bot_config(_user: User = Depends(get_current_user)):
     """Get current bot configuration."""
     return {
         "active_project_id": get_runtime_value("bot_active_project_id", None),
     }
 
 @router.post("/config")
-async def update_bot_config(config: BotConfig, _user: User = Depends(_require_admin)):
+async def update_bot_config(config: BotConfig, _user: User = Depends(get_current_user)):
     """Update bot configuration (active project)."""
     current_config = {
         "active_project_id": get_runtime_value("bot_active_project_id", None),
@@ -43,7 +38,7 @@ async def update_bot_config(config: BotConfig, _user: User = Depends(_require_ad
 @router.post("/profile")
 async def update_bot_profile(
     name: str = Form(...),
-    _user: User = Depends(_require_admin),
+    _user: User = Depends(get_current_user),
     # image: UploadFile = File(None) # Image upload to be implemented if needed
 ):
     """
