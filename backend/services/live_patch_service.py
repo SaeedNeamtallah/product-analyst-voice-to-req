@@ -6,9 +6,9 @@ from __future__ import annotations
 import json
 import logging
 from uuid import uuid4
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from backend.database.models import ChatMessage
 from backend.providers.llm.factory import LLMProviderFactory
@@ -19,11 +19,80 @@ logger = logging.getLogger(__name__)
 
 _AREAS = ["discovery", "scope", "users", "features", "constraints"]
 
+# Stages the LLM might return that are not in our canonical set —
+# map them to the closest valid stage so validation never fails.
+_STAGE_ALIASES: Dict[str, str] = {
+    "elaboration": "features",
+    "requirement": "features",
+    "requirements": "features",
+    "define": "scope",
+    "definition": "scope",
+    "user": "users",
+    "constraint": "constraints",
+    "explore": "discovery",
+    "exploration": "discovery",
+}
+
 
 class LivePatchExtraction(BaseModel):
-    summary: Dict[str, List[str]]
+    # Each area is a list of strings OR dicts — we normalise to strings in the validator.
+    summary: Dict[str, List[Union[str, Dict[str, Any]]]]
     coverage: Dict[str, float]
-    target_stage: str = Field(pattern="^(discovery|scope|users|features|constraints)$")
+    # Accept any string from the LLM; we coerce it to a valid stage ourselves.
+    target_stage: str
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def _normalise_summary(
+        cls, v: Any
+    ) -> Dict[str, List[str]]:
+        """
+        The LLM sometimes returns rich objects like {"id": "...", "value": "..."}
+        instead of plain strings.  Flatten everything to str so downstream
+        _merge_summary (which re-attaches ids) works correctly.
+        """
+        if not isinstance(v, dict):
+            return v  # let pydantic surface the real error
+        out: Dict[str, List[str]] = {}
+        for area in _AREAS:
+            raw_items = v.get(area, [])
+            if not isinstance(raw_items, list):
+                raw_items = []
+            strings: List[str] = []
+            for item in raw_items:
+                if isinstance(item, str):
+                    strings.append(item)
+                elif isinstance(item, dict):
+                    # Prefer "value", fall back to "text", then stringify the whole dict
+                    text = item.get("value") or item.get("text") or ""
+                    if not text:
+                        text = " | ".join(str(val) for val in item.values() if val)
+                    if text:
+                        strings.append(str(text).strip())
+            out[area] = strings
+        return out
+
+    @field_validator("target_stage", mode="before")
+    @classmethod
+    def _coerce_target_stage(cls, v: Any) -> str:
+        """
+        Normalise whatever string the LLM returns to one of the five valid stages.
+        Falls back to 'discovery' if nothing matches.
+        """
+        if not isinstance(v, str):
+            return "discovery"
+        normalised = v.strip().lower()
+        if normalised in _AREAS:
+            return normalised
+        # Try alias map
+        if normalised in _STAGE_ALIASES:
+            return _STAGE_ALIASES[normalised]
+        # Try prefix match (e.g. "feature_extraction" → "features")
+        for area in _AREAS:
+            if normalised.startswith(area) or area.startswith(normalised):
+                return area
+        logger.warning("Unknown target_stage %r from LLM — defaulting to 'discovery'", v)
+        return "discovery"
 
 
 class LivePatchService:
@@ -124,7 +193,9 @@ class LivePatchService:
             f"Conversation:\n{conversation}\n\n"
             "CRITICAL: Base your extraction STRICTLY on the provided conversation. Do not hallucinate or invent requirements.\n"
             "Return JSON with keys: summary, coverage, target_stage.\n"
-            "summary must contain discovery/scope/users/features/constraints as arrays of detailed concrete requirements (must retain exact entity names, subsystem names, and specific rules mentioned).\n"
+            "summary must contain discovery/scope/users/features/constraints as arrays of plain strings "
+            "(each string is one concrete requirement — no nested objects).\n"
+            f"target_stage must be exactly one of: {_AREAS}.\n"
             "coverage values must be 0..100."
         )
 
