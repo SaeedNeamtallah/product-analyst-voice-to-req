@@ -25,7 +25,7 @@ class Settings(BaseSettings):
         default="",
         alias="GEMINI_API_KEY"
     )
-    llm_provider: str = Field(default="gemini", alias="LLM_PROVIDER")
+    llm_provider: str = Field(default="groq", alias="LLM_PROVIDER")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
     gemini_lite_model: str = Field(default="gemini-2.5-lite-flash", alias="GEMINI_LITE_MODEL")
     # OpenAI-compatible LLM providers
@@ -102,21 +102,6 @@ class Settings(BaseSettings):
     environment: str = Field(default="development", alias="ENVIRONMENT")
     strict_startup_checks: bool = Field(default=False, alias="STRICT_STARTUP_CHECKS")
 
-    # Redis (shared state for stateless API workers)
-    redis_enabled: bool = Field(default=True, alias="REDIS_ENABLED")
-    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
-    redis_key_prefix: str = Field(default="tawasul", alias="REDIS_KEY_PREFIX")
-    redis_max_connections: int = Field(default=200, alias="REDIS_MAX_CONNECTIONS")
-    redis_socket_timeout: float = Field(default=2.0, alias="REDIS_SOCKET_TIMEOUT")
-    redis_connect_timeout: float = Field(default=2.0, alias="REDIS_CONNECT_TIMEOUT")
-    redis_health_check_interval: int = Field(default=30, alias="REDIS_HEALTH_CHECK_INTERVAL")
-    redis_state_ttl_seconds: int = Field(default=86400, alias="REDIS_STATE_TTL_SECONDS")
-    redis_draft_ttl_seconds: int = Field(default=604800, alias="REDIS_DRAFT_TTL_SECONDS")
-    redis_require_tls: bool = Field(default=False, alias="REDIS_REQUIRE_TLS")
-    redis_ssl_cert_reqs: str = Field(default="required", alias="REDIS_SSL_CERT_REQS")
-    redis_username: str = Field(default="", alias="REDIS_USERNAME")
-    redis_password: str = Field(default="", alias="REDIS_PASSWORD")
-    
     # Telegram Bot Configuration
     telegram_bot_token: str = Field(default="", alias="TELEGRAM_BOT_TOKEN")
     telegram_admin_id: str = Field(default="", alias="TELEGRAM_ADMIN_ID")
@@ -190,23 +175,6 @@ class Settings(BaseSettings):
         if "*" in self.cors_origins:
             errors_list.append("CORS_ORIGINS must not include '*' in production.")
 
-    def _validate_production_redis(self, errors_list: List[str]) -> None:
-        if not self.redis_enabled:
-            errors_list.append("REDIS_ENABLED must be true in production for shared worker state.")
-        if not str(self.redis_url or "").strip():
-            errors_list.append("REDIS_URL must be set in production.")
-        if self.redis_require_tls and not str(self.redis_url or "").strip().startswith("rediss://"):
-            errors_list.append("REDIS_REQUIRE_TLS=true requires REDIS_URL to start with rediss://")
-
-        redis_password = str(self.redis_password or "").strip()
-        redis_url = str(self.redis_url or "").strip()
-        if not redis_password and "@" not in redis_url:
-            errors_list.append("Redis authentication must be configured in production (REDIS_PASSWORD or credentialed REDIS_URL).")
-
-        cert_reqs = str(self.redis_ssl_cert_reqs or "required").strip().lower()
-        if cert_reqs not in {"required", "optional", "none"}:
-            errors_list.append("REDIS_SSL_CERT_REQS must be one of: required|optional|none")
-
     def _validate_provider_configuration(
         self,
         env: str,
@@ -234,7 +202,6 @@ class Settings(BaseSettings):
         jwt_secret_from_env = str(os.getenv("JWT_SECRET", "")).strip()
         if env == "production":
             self._validate_production_basics(errors_list, jwt_secret_from_env)
-            self._validate_production_redis(errors_list)
 
         self._validate_provider_configuration(env, warnings_list, errors_list)
 

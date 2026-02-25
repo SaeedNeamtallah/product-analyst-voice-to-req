@@ -122,18 +122,19 @@ class LivePatchService:
             f"Previous summary: {json.dumps(old_summary, ensure_ascii=False)}\n"
             f"Previous coverage: {json.dumps(old_coverage, ensure_ascii=False)}\n"
             f"Conversation:\n{conversation}\n\n"
+            "CRITICAL: Base your extraction STRICTLY on the provided conversation. Do not hallucinate or invent requirements.\n"
             "Return JSON with keys: summary, coverage, target_stage.\n"
-            "summary must contain discovery/scope/users/features/constraints as arrays of short concrete requirements.\n"
+            "summary must contain discovery/scope/users/features/constraints as arrays of detailed concrete requirements (must retain exact entity names, subsystem names, and specific rules mentioned).\n"
             "coverage values must be 0..100."
         )
 
-        provider = LLMProviderFactory.create_provider()
         try:
-            raw = await provider.generate_text(
+            raw, _ = await InterviewService._generate_text_resilient(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 temperature=0.1,
                 max_tokens=1800,
+                breaker_prefix="live_patch_extraction",
                 response_format={"type": "json_object"},
             )
             parsed = LivePatchExtraction.model_validate_json(raw)
@@ -148,7 +149,7 @@ class LivePatchService:
             logger.warning("Live patch semantic extraction failed: %s", exc)
 
         return {
-            "summary": {area: [] for area in _AREAS},
+            "summary": old_summary,
             "coverage": old_coverage,
             "target_stage": InterviewService._pick_focus_area(old_coverage),
         }

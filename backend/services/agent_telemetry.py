@@ -1,20 +1,15 @@
 """
-Redis-backed telemetry for agent quality metrics.
+Agent telemetry helpers backed by process-local counters.
 """
 from __future__ import annotations
 
-import logging
-from typing import Dict, Any
-from datetime import datetime, timezone
-
-from backend.config import settings
-from backend.services.redis_keyspace import RedisKeyspace
-from backend.services.redis_runtime import get_redis
-
-logger = logging.getLogger(__name__)
+from typing import Any, Dict
 
 
 class AgentTelemetryService:
+    _project_state: dict[int, Dict[str, int | bool]] = {}
+    _global_suggestions_accepted: int = 0
+
     @classmethod
     async def record_turn(
         cls,
@@ -22,136 +17,72 @@ class AgentTelemetryService:
         signals: Dict[str, Any],
         suggested_answers_count: int,
     ) -> None:
-        redis = await get_redis()
-        if redis is None:
-            return
-        key = RedisKeyspace.telemetry_hash(project_id)
-        state_key = RedisKeyspace.telemetry_project_state(project_id)
+        state = dict(cls._project_state.get(int(project_id), {}))
+        state.setdefault("total_turns", 0)
+        state.setdefault("ambiguity_detected", 0)
+        state.setdefault("ambiguity_resolved", 0)
+        state.setdefault("contradiction_risk", 0)
+        state.setdefault("contradiction_caught", 0)
+        state.setdefault("suggestions_shown", 0)
+        state.setdefault("last_ambiguity", False)
 
-        try:
-            await redis.hincrby(key, "total_turns", 1)
-            if bool(signals.get("scope_budget_risk")):
-                await redis.hincrby(key, "contradiction_risk", 1)
-            if bool(signals.get("contradiction_detected")):
-                await redis.hincrby(key, "contradiction_caught", 1)
+        state["total_turns"] = int(state["total_turns"]) + 1
 
-            ambiguity = bool(signals.get("ambiguity_detected"))
-            prev_ambiguity_raw = await redis.hget(state_key, "last_ambiguity")
-            prev_ambiguity = str(prev_ambiguity_raw or "0") == "1"
-            if ambiguity:
-                await redis.hincrby(key, "ambiguity_detected", 1)
-            if prev_ambiguity and not ambiguity:
-                await redis.hincrby(key, "ambiguity_resolved", 1)
+        if bool(signals.get("scope_budget_risk")):
+            state["contradiction_risk"] = int(state["contradiction_risk"]) + 1
+        if bool(signals.get("contradiction_detected")):
+            state["contradiction_caught"] = int(state["contradiction_caught"]) + 1
 
-            await redis.hset(state_key, mapping={
-                "last_ambiguity": "1" if ambiguity else "0",
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            })
+        ambiguity_now = bool(signals.get("ambiguity_detected"))
+        if ambiguity_now:
+            state["ambiguity_detected"] = int(state["ambiguity_detected"]) + 1
+        if bool(state.get("last_ambiguity")) and not ambiguity_now:
+            state["ambiguity_resolved"] = int(state["ambiguity_resolved"]) + 1
+        state["last_ambiguity"] = ambiguity_now
 
-            shown = max(0, int(suggested_answers_count))
-            if shown > 0:
-                await redis.hincrby(key, "suggestions_shown", shown)
+        shown = max(0, int(suggested_answers_count))
+        if shown > 0:
+            state["suggestions_shown"] = int(state["suggestions_shown"]) + shown
 
-            ttl = max(60, int(settings.redis_state_ttl_seconds))
-            await redis.expire(key, ttl)
-            await redis.expire(state_key, ttl)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to record telemetry turn in Redis: %s", exc)
+        cls._project_state[int(project_id)] = state
 
     @classmethod
     async def record_suggestion_accepted(cls) -> None:
-        redis = await get_redis()
-        if redis is None:
-            return
-        key = RedisKeyspace.lock("telemetry", "global_suggestions")
-        try:
-            await redis.hincrby(key, "suggestions_accepted", 1)
-            await redis.expire(key, max(60, int(settings.redis_state_ttl_seconds)))
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to record suggestion acceptance in Redis: %s", exc)
+        cls._global_suggestions_accepted = int(cls._global_suggestions_accepted) + 1
 
     @classmethod
     async def snapshot(cls, project_id: int) -> Dict[str, Any]:
-        redis = await get_redis()
-        if redis is None:
-            return {
-                "turns": 0,
-                "ambiguity_resolution_rate": 0.0,
-                "contradiction_catch_rate": 0.0,
-                "suggestion_acceptance_rate": 0.0,
-                "raw": {
-                    "ambiguity_detected": 0,
-                    "ambiguity_resolved": 0,
-                    "contradiction_risk": 0,
-                    "contradiction_caught": 0,
-                    "suggestions_shown": 0,
-                    "suggestions_accepted": 0,
-                },
-            }
+        state = dict(cls._project_state.get(int(project_id), {}))
 
-        key = RedisKeyspace.telemetry_hash(project_id)
-        global_key = RedisKeyspace.lock("telemetry", "global_suggestions")
-        try:
-            values = await redis.hgetall(key)
-            global_values = await redis.hgetall(global_key)
+        turns = int(state.get("total_turns", 0))
+        ambiguity_detected = int(state.get("ambiguity_detected", 0))
+        ambiguity_resolved = int(state.get("ambiguity_resolved", 0))
+        contradiction_risk = int(state.get("contradiction_risk", 0))
+        contradiction_caught = int(state.get("contradiction_caught", 0))
+        suggestions_shown = int(state.get("suggestions_shown", 0))
+        suggestions_accepted = int(cls._global_suggestions_accepted)
 
-            def _to_int(name: str, source: Dict[Any, Any]) -> int:
-                raw = source.get(name)
-                if raw is None:
-                    return 0
-                try:
-                    return int(raw)
-                except (TypeError, ValueError):
-                    try:
-                        return int(raw.decode("utf-8"))
-                    except Exception:  # noqa: BLE001
-                        return 0
+        ambiguity_resolution_rate = (
+            ambiguity_resolved / ambiguity_detected if ambiguity_detected > 0 else 0.0
+        )
+        contradiction_catch_rate = (
+            contradiction_caught / contradiction_risk if contradiction_risk > 0 else 0.0
+        )
+        suggestion_acceptance_rate = (
+            suggestions_accepted / suggestions_shown if suggestions_shown > 0 else 0.0
+        )
 
-            turns = _to_int("total_turns", values)
-            ambiguity_detected = _to_int("ambiguity_detected", values)
-            ambiguity_resolved = _to_int("ambiguity_resolved", values)
-            contradiction_risk = _to_int("contradiction_risk", values)
-            contradiction_caught = _to_int("contradiction_caught", values)
-            suggestions_shown = _to_int("suggestions_shown", values)
-            suggestions_accepted = _to_int("suggestions_accepted", global_values)
-
-            ambiguity_resolution_rate = (
-                ambiguity_resolved / ambiguity_detected if ambiguity_detected > 0 else 0.0
-            )
-            contradiction_catch_rate = (
-                contradiction_caught / contradiction_risk if contradiction_risk > 0 else 0.0
-            )
-            suggestion_acceptance_rate = (
-                suggestions_accepted / suggestions_shown if suggestions_shown > 0 else 0.0
-            )
-
-            return {
-                "turns": turns,
-                "ambiguity_resolution_rate": round(ambiguity_resolution_rate, 3),
-                "contradiction_catch_rate": round(contradiction_catch_rate, 3),
-                "suggestion_acceptance_rate": round(suggestion_acceptance_rate, 3),
-                "raw": {
-                    "ambiguity_detected": ambiguity_detected,
-                    "ambiguity_resolved": ambiguity_resolved,
-                    "contradiction_risk": contradiction_risk,
-                    "contradiction_caught": contradiction_caught,
-                    "suggestions_shown": suggestions_shown,
-                    "suggestions_accepted": suggestions_accepted,
-                },
-            }
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to read telemetry snapshot from Redis: %s", exc)
-            return {
-                "turns": 0,
-                "ambiguity_resolution_rate": 0.0,
-                "contradiction_catch_rate": 0.0,
-                "suggestion_acceptance_rate": 0.0,
-                "raw": {
-                    "ambiguity_detected": 0,
-                    "ambiguity_resolved": 0,
-                    "contradiction_risk": 0,
-                    "contradiction_caught": 0,
-                    "suggestions_shown": 0,
-                    "suggestions_accepted": 0,
-                },
-            }
+        return {
+            "turns": turns,
+            "ambiguity_resolution_rate": round(ambiguity_resolution_rate, 3),
+            "contradiction_catch_rate": round(contradiction_catch_rate, 3),
+            "suggestion_acceptance_rate": round(suggestion_acceptance_rate, 3),
+            "raw": {
+                "ambiguity_detected": ambiguity_detected,
+                "ambiguity_resolved": ambiguity_resolved,
+                "contradiction_risk": contradiction_risk,
+                "contradiction_caught": contradiction_caught,
+                "suggestions_shown": suggestions_shown,
+                "suggestions_accepted": suggestions_accepted,
+            },
+        }

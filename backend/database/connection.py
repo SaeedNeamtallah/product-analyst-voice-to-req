@@ -40,13 +40,7 @@ async def get_db() -> AsyncSession:
     on unhandled exceptions and always close when the request ends.
     """
     async with async_session_maker() as session:
-        try:
-            yield session
-        except Exception:
-            await session.rollback()
-            raise
-        finally:
-            await session.close()
+        yield session
 
 
 async def init_db():

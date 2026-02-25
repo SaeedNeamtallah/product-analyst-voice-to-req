@@ -3304,12 +3304,7 @@ async function handleInterviewTurn({ projectId, query, language, thinkingId, pen
         });
 
         const interviewPayload = { language };
-        if (state.previousSummary) {
-            interviewPayload.last_summary = state.previousSummary;
-        }
-        if (state.lastCoverage) {
-            interviewPayload.last_coverage = state.lastCoverage;
-        }
+        // Do NOT send summary or coverage anymore; backend is source of truth
 
         const next = await api.post(
             `/projects/${projectId}/interview/next`,

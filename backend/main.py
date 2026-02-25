@@ -46,7 +46,6 @@ except Exception:  # noqa: BLE001
     _request_latency = None
 
 from backend.database import init_db, close_db
-from backend.services.redis_runtime import get_redis, close_redis
 from backend.routes import projects, documents, query, health, stats, bot_config, app_config, stt, srs, messages, interview, judge
 from backend.routes import auth
 from backend.routes import handoff
@@ -65,15 +64,10 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize database: {str(e)}")
         raise
 
-    redis_client = await get_redis()
-    if settings.redis_enabled and redis_client is None:
-        logger.warning("Redis is enabled but unavailable; runtime still uses fallback local state in legacy paths")
-    
     yield
     
     # Shutdown
     logger.info("Shutting down Tawasul API...")
-    await close_redis()
     await close_db()
     logger.info("Database connections closed")
 

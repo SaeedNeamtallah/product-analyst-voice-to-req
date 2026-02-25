@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.database import get_db
-from backend.services.redis_runtime import get_redis
 
 logger = logging.getLogger(__name__)
 
@@ -38,23 +37,6 @@ async def _database_readiness(db: AsyncSession) -> dict:
         return {"status": "ready", "details": "Connection is healthy"}
     except Exception as exc:  # noqa: BLE001
         return {"status": "not_ready", "details": f"DB check failed: {exc}"}
-
-
-async def _redis_readiness() -> dict:
-    if not settings.redis_enabled:
-        return {"status": "degraded", "details": "REDIS_ENABLED=false"}
-
-    redis = await get_redis()
-    if redis is None:
-        return {"status": "not_ready", "details": "Redis client unavailable"}
-
-    try:
-        pong = await redis.ping()
-        if pong:
-            return {"status": "ready", "details": "Ping successful"}
-        return {"status": "not_ready", "details": "Ping failed"}
-    except Exception as exc:  # noqa: BLE001
-        return {"status": "not_ready", "details": f"Redis check failed: {exc}"}
 
 
 def _llm_config_readiness() -> dict:
@@ -94,7 +76,6 @@ async def readiness_check(db: AsyncSession = Depends(get_db)):
     """Production-style readiness probe with component status details."""
     checks = {
         "database": await _database_readiness(db),
-        "redis": await _redis_readiness(),
         "llm_config": _llm_config_readiness(),
     }
 

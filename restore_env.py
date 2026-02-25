@@ -1,5 +1,5 @@
 with open('.env', 'w', encoding='utf-8') as f:
-    f.write('DATABASE_URL=postgresql+asyncpg://postgres:Ezz123456@localhost:5555/ragmind\n')
+    f.write('DATABASE_URL=postgresql+asyncpg://tawasul:tawasul123@localhost:5555/tawasul')
     f.write('GEMINI_API_KEY=AIzaSyD2N-rsmfER9P2dZznBh4wXKAFZRajJ0eU\n')
     f.write('LLM_PROVIDER=gemini\n')
     f.write('GEMINI_MODEL=gemini-2.0-flash\n')

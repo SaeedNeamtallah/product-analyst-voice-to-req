@@ -2,21 +2,20 @@
 Telegram Bot Handlers.
 Command and message handlers for the bot using pyTelegramBotAPI.
 """
+import asyncio
 import json
 from io import BytesIO
 import httpx
 from typing import Any
 from telebot import types
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
-from backend.services.redis_keyspace import RedisKeyspace
+from backend.database import get_db
+from backend.database.models import TelegramSession
 from telegram_bot.config import bot_settings
 import logging
-
-try:
-    from redis import Redis
-except Exception:  # noqa: BLE001
-    Redis = None
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +34,6 @@ MENU_HELP_EN = "❓ Help"
 
 # Bot instance (will be set from bot.py)
 bot = None
-_redis_client: Any = None
 _session_fallback: dict[int, int] = {}
 _auth_token: str | None = None
 
@@ -44,62 +42,38 @@ def set_bot(bot_instance):
     bot = bot_instance
 
 
-def _get_redis_client() -> Any:
-    global _redis_client
-    if Redis is None:
-        return None
-
-    if _redis_client is not None:
-        return _redis_client
-
-    if not bool(settings.redis_enabled and str(settings.redis_url or "").strip()):
-        return None
-
-    try:
-        _redis_client = Redis.from_url(
-            str(settings.redis_url),
-            decode_responses=True,
-            socket_timeout=max(0.1, float(settings.redis_socket_timeout)),
-            socket_connect_timeout=max(0.1, float(settings.redis_connect_timeout)),
-        )
-        _redis_client.ping()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("Redis unavailable for telegram session routing: %s", exc)
-        _redis_client = None
-    return _redis_client
-
-
-def _session_key(chat_id: int) -> str:
-    return RedisKeyspace.telegram_session(chat_id)
-
+from backend.database.connection import async_session_maker
 
 def set_chat_project(chat_id: int, project_id: int) -> None:
-    redis_client = _get_redis_client()
-    if redis_client is not None:
+    async def _do():
         try:
-            redis_client.set(
-                _session_key(chat_id),
-                str(int(project_id)),
-                ex=max(3600, int(settings.redis_state_ttl_seconds)),
-            )
-            return
+            async with async_session_maker() as db:
+                stmt = select(TelegramSession).where(TelegramSession.chat_id == chat_id)
+                existing = await db.scalar(stmt)
+                if existing:
+                    existing.project_id = project_id
+                else:
+                    new_session = TelegramSession(chat_id=chat_id, project_id=project_id)
+                    db.add(new_session)
+                await db.commit()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to set telegram session in Redis: %s", exc)
-    _session_fallback[int(chat_id)] = int(project_id)
+            logger.warning("Failed to set telegram session in DB: %s", exc)
+            _session_fallback[int(chat_id)] = int(project_id)
+    asyncio.run(_do())
 
 
 def get_chat_project(chat_id: int) -> int | None:
-    redis_client = _get_redis_client()
-    if redis_client is not None:
+    async def _do():
         try:
-            raw = redis_client.get(_session_key(chat_id))
-            if raw is not None and str(raw).strip():
-                return int(str(raw).strip())
+            async with async_session_maker() as db:
+                stmt = select(TelegramSession).where(TelegramSession.chat_id == chat_id)
+                session = await db.scalar(stmt)
+                if session:
+                    return session.project_id
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to read telegram session from Redis: %s", exc)
-
-    fallback = _session_fallback.get(int(chat_id))
-    return int(fallback) if fallback is not None else None
+            logger.warning("Failed to read telegram session from DB: %s", exc)
+        return _session_fallback.get(int(chat_id))
+    return asyncio.run(_do())
 
 
 def _detect_language(text: str) -> str:
@@ -305,6 +279,34 @@ def _srs_need_more_details_text(language: str, detail: str) -> str:
     return f"{base}\n\nالتفاصيل: {detail}" if detail else base
 
 
+def _srs_parse_error_text(language: str, detail: str) -> str:
+    if language == "en":
+        base = (
+            "⚠️ SRS generation failed due to invalid AI output format (JSON parsing error). "
+            "Please retry now; if it repeats, switch the AI provider/model from settings."
+        )
+        return f"{base}\n\nDetails: {detail}" if detail else base
+
+    base = (
+        "⚠️ تعذّر توليد SRS بسبب مخرجات AI غير صالحة بصيغة JSON (JSON parsing error). "
+        "جرّب مرة أخرى الآن، وإذا تكرر الخطأ غيّر مزوّد/موديل الذكاء من الإعدادات."
+    )
+    return f"{base}\n\nالتفاصيل: {detail}" if detail else base
+
+
+def _is_srs_parse_error(detail: str) -> bool:
+    value = str(detail or "").strip().lower()
+    if not value:
+        return False
+    markers = [
+        "failed to parse srs json",
+        "json parsing",
+        "json decode",
+        "invalid json",
+    ]
+    return any(marker in value for marker in markers)
+
+
 def _safe_http_error_detail(response) -> str:
     if response is None:
         return ""
@@ -326,11 +328,35 @@ def _refresh_srs_or_explain(project_id: int, user_lang: str) -> str | None:
         response = refresh_exc.response
         if response is not None and response.status_code == 400:
             detail = _safe_http_error_detail(response)
+            if _is_srs_parse_error(detail):
+                return _srs_parse_error_text(user_lang, detail)
             return _srs_need_more_details_text(user_lang, detail)
         raise
 
 
+def _save_interview_draft(project_id: int, result: dict, language: str) -> None:
+    if not isinstance(result, dict):
+        return
+
+    payload = {
+        "summary": result.get("summary") if isinstance(result.get("summary"), dict) else {},
+        "coverage": result.get("coverage") if isinstance(result.get("coverage"), dict) else {},
+        "signals": result.get("signals") if isinstance(result.get("signals"), dict) else {},
+        "livePatch": result.get("live_patch") if isinstance(result.get("live_patch"), dict) else {},
+        "cycleTrace": result.get("cycle_trace") if isinstance(result.get("cycle_trace"), dict) else {},
+        "topicNavigation": result.get("topic_navigation") if isinstance(result.get("topic_navigation"), dict) else {},
+        "stage": str(result.get("stage") or "discovery"),
+        "mode": False,
+        "lastAssistantQuestion": str(result.get("question") or ""),
+        "lang": language if language in {"ar", "en"} else "ar",
+    }
+    _api_post(f"/projects/{project_id}/interview/draft", payload)
+
+
 def _run_interview_turn(project_id: int, query: str, language: str, source: str) -> str:
+    msg_metadata = {"source": source, "language": language}
+    if source == "telegram_voice":
+        msg_metadata["transcript_confirmed"] = True
     _api_post(
         f"/projects/{project_id}/messages",
         {
@@ -338,7 +364,7 @@ def _run_interview_turn(project_id: int, query: str, language: str, source: str)
                 {
                     "role": "user",
                     "content": query,
-                    "metadata": {"source": source, "language": language},
+                    "metadata": msg_metadata,
                 }
             ]
         },
@@ -354,6 +380,8 @@ def _run_interview_turn(project_id: int, query: str, language: str, source: str)
             "last_coverage": last_coverage,
         },
     )
+
+    _save_interview_draft(project_id=project_id, result=result, language=language)
 
     assistant_text = str(result.get("question") or "").strip() or _assistant_fallback_text(language)
 
@@ -639,7 +667,8 @@ def handle_message(message):
         return
 
     # Ignore commands
-    if message.text.startswith('/'):
+    raw_text = str(getattr(message, "text", "") or "")
+    if raw_text.startswith('/'):
         return
 
     chat_id = int(message.chat.id)

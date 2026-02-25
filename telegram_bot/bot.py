@@ -1,16 +1,13 @@
-"""
-Tawasul Telegram Bot.
-Main bot application using pyTelegramBotAPI.
-"""
-from __future__ import annotations
-
+import asyncio
+import logging
+import tempfile
 import atexit
 from pathlib import Path
-import tempfile
+
 import telebot
+
 from telegram_bot.config import bot_settings
-from telegram_bot import handlers
-import logging
+import telegram_bot.handlers as handlers
 
 try:
     import msvcrt  # Windows

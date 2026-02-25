@@ -244,12 +244,13 @@ function Invoke-PostgresQuery {
     param(
         [Parameter(Mandatory = $true)][string]$ContainerId,
         [Parameter(Mandatory = $true)][string]$User,
-        [Parameter(Mandatory = $true)][string]$Password,
+        [Parameter(Mandatory = $true)][AllowEmptyString()][string]$Password,
         [Parameter(Mandatory = $true)][string]$Query
     )
 
     $escapedQuery = $Query.Replace('"', '""')
-    $commandLine = "docker exec -e PGPASSWORD=$Password $ContainerId psql -U $User -d postgres -tAc `"$escapedQuery`""
+    $passwordEnvPart = if ([string]::IsNullOrEmpty($Password)) { '' } else { "-e PGPASSWORD=$Password" }
+    $commandLine = "docker exec $passwordEnvPart $ContainerId psql -U $User -d postgres -tAc `"$escapedQuery`""
 
     $previousErrorActionPreference = $ErrorActionPreference
     try {
@@ -291,43 +292,66 @@ function Ensure-DatabaseIdentity {
 
     $adminCandidates = @(
         @{ User = $desiredUser; Password = $desiredPassword },
-        @{ User = 'ragmind'; Password = 'ragmind123' },
         @{ User = 'tawasul'; Password = 'tawasul123' },
         @{ User = 'postgres'; Password = 'postgres' },
         @{ User = 'postgres'; Password = '' }
     )
 
-    $adminAccount = $null
+    $authenticatedAccounts = @()
     foreach ($candidate in $adminCandidates) {
         $probe = Invoke-PostgresQuery -ContainerId $containerId -User $candidate.User -Password $candidate.Password -Query 'SELECT 1'
         if ($probe -eq '1') {
-            $adminAccount = $candidate
-            break
+            $authenticatedAccounts += ,$candidate
         }
     }
 
-    if ($null -eq $adminAccount) {
+    if ($authenticatedAccounts.Count -eq 0) {
         Write-Host '[WARN] Could not authenticate to PostgreSQL for bootstrap. Skipping role/db auto-fix.' -ForegroundColor Yellow
         return
     }
 
-    $roleExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_roles WHERE rolname = '$desiredUser'"
+    $adminAccount = $authenticatedAccounts[0]
+
+    $desiredUserLiteral = $desiredUser.Replace("'", "''")
+    $desiredDatabaseLiteral = $desiredDatabase.Replace("'", "''")
+
+    $roleExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_roles WHERE rolname = '$desiredUserLiteral'"
     if ($roleExists -ne '1') {
         $escapedPasswordSql = $desiredPassword.Replace("'", "''")
         $createRole = "CREATE ROLE `"$desiredUser`" LOGIN PASSWORD '$escapedPasswordSql'"
-        $created = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query $createRole
-        if ($null -eq $created) {
-            throw "Failed to create PostgreSQL role '$desiredUser'."
+        $created = $false
+        foreach ($candidate in $authenticatedAccounts) {
+            $createResult = Invoke-PostgresQuery -ContainerId $containerId -User $candidate.User -Password $candidate.Password -Query $createRole
+            if ($null -ne $createResult) {
+                $created = $true
+                $adminAccount = $candidate
+                break
+            }
+        }
+
+        if (-not $created) {
+            $triedUsers = (($authenticatedAccounts | ForEach-Object { $_.User }) -join ', ')
+            throw "Failed to create PostgreSQL role '$desiredUser'. Tried authenticated users: $triedUsers"
         }
         Write-Host "[INFO] Created PostgreSQL role '$desiredUser'." -ForegroundColor Yellow
     }
 
-    $dbExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_database WHERE datname = '$desiredDatabase'"
+    $dbExists = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query "SELECT 1 FROM pg_database WHERE datname = '$desiredDatabaseLiteral'"
     if ($dbExists -ne '1') {
         $createDb = "CREATE DATABASE `"$desiredDatabase`" OWNER `"$desiredUser`""
-        $createdDb = Invoke-PostgresQuery -ContainerId $containerId -User $adminAccount.User -Password $adminAccount.Password -Query $createDb
-        if ($null -eq $createdDb) {
-            throw "Failed to create PostgreSQL database '$desiredDatabase'."
+        $createdDb = $false
+        foreach ($candidate in $authenticatedAccounts) {
+            $createDbResult = Invoke-PostgresQuery -ContainerId $containerId -User $candidate.User -Password $candidate.Password -Query $createDb
+            if ($null -ne $createDbResult) {
+                $createdDb = $true
+                $adminAccount = $candidate
+                break
+            }
+        }
+
+        if (-not $createdDb) {
+            $triedUsers = (($authenticatedAccounts | ForEach-Object { $_.User }) -join ', ')
+            throw "Failed to create PostgreSQL database '$desiredDatabase'. Tried authenticated users: $triedUsers"
         }
         Write-Host "[INFO] Created PostgreSQL database '$desiredDatabase' (owner '$desiredUser')." -ForegroundColor Yellow
     }

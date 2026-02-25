@@ -22,7 +22,6 @@ The platform is designed to:
 
 Current product scope includes:
 - User and project management.
-- Document upload (PDF / DOCX / TXT) and text extraction.
 - Interactive interview loop with continuously updated SRS drafts.
 - Voice input through STT with post-processing correction.
 - SRS export to HTML/PDF.
@@ -36,11 +35,9 @@ Current product scope includes:
 - Python 3.10+
 - FastAPI (async)
 - SQLAlchemy Async + asyncpg
-- Redis (runtime state, counters, snapshot cache)
 
 ### Data & Storage
 - PostgreSQL (core entities)
-- Redis (sessions/locking/counters/cache)
 - Local/S3 object storage for uploaded assets
 
 ### AI Layer
@@ -72,7 +69,7 @@ The system is implemented as a **modular monolith**, with a clear path to servic
 3. **Provider Layer**
    - LLM provider factory + OpenAI-compatible providers
 4. **Persistence Layer**
-   - PostgreSQL models + Redis runtime/cache
+  - PostgreSQL models (single source of truth)
 5. **Channel Layer**
    - Web client + Telegram bot sharing the same backend business logic
 
@@ -166,9 +163,9 @@ Primary tables in the current implementation:
 - LLM/STT calls support automatic fallback across configured providers.
 - If one provider fails or is rate-limited, execution shifts to alternatives.
 
-### Redis-backed State
-- Redis is used for runtime state, telemetry, and cache semantics.
-- Helps maintain consistency across multiple workers.
+### Backend-managed State
+- Runtime and interview state are persisted in PostgreSQL.
+- This avoids cross-worker drift and removes external cache coupling.
 
 ### Observability
 - Middleware injects `X-Request-ID` and `X-Response-Time-ms`.
@@ -180,11 +177,11 @@ Primary tables in the current implementation:
 
 | Domain | Risk | Mitigation Strategy |
 |---|---|---|
-| Interview State | Concurrent update collisions | Redis-backed snapshot/cache + in-service sequencing |
+| Interview State | Concurrent update collisions | PostgreSQL row locking + backend-managed state |
 | LLM Quality | Hallucination or over-generalization | Incremental update style + context grounding + low temperature where needed |
 | STT Accuracy | Dialect/noise/transcription drift | Post-processing layer before downstream analysis |
 | Provider Availability | Single-vendor outage | Multi-provider failover |
-| Runtime Consistency | Worker state divergence | Redis runtime state + keyspace conventions |
+| Runtime Consistency | Worker state divergence | DB-backed state and transactional updates |
 
 ---
 
@@ -204,7 +201,6 @@ Primary tables in the current implementation:
 ### Current Docker Services
 **File:** `docker-compose.yml`
 - PostgreSQL on host port `5555` (default)
-- Redis on host port `6379` (default)
 
 ---
 
@@ -215,7 +211,6 @@ Baseline example:
 ```env
 # Core
 DATABASE_URL=postgresql+asyncpg://tawasul:tawasul123@localhost:5555/tawasul
-REDIS_URL=redis://localhost:6379/0
 
 # LLM / STT
 LLM_PROVIDER=gemini
@@ -282,7 +277,7 @@ start*.bat
 
 - This repository reflects a product-oriented implementation with clear extensibility points.
 - Some earlier presentations may mention Qdrant or separate RAG services; the current active path is centered on:
-  - PostgreSQL + Redis
+  - PostgreSQL (single source of truth)
   - Document extraction + conversational elicitation
   - LLM/STT failover
 - Future RAG/vector capabilities can be added as an additional layer on top of the existing interview orchestration.

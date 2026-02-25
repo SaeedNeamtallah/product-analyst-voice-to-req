@@ -57,12 +57,40 @@ class SRSService:
         prompt = self._build_prompt(conversation, transcripts, language)
 
         llm_provider = LLMProviderFactory.create_provider()
-        raw = await llm_provider.generate_text(
+        raw = await self._generate_structured_text(
+            llm_provider=llm_provider,
             prompt=prompt,
             temperature=0.3,
             max_tokens=3000,
+            response_format={"type": "json_object"},
         )
-        content = self._parse_json(raw)
+        try:
+            content = self._parse_json(raw)
+        except ValueError as first_parse_error:
+            logger.warning("Initial SRS parse failed for project %s: %s", project_id, first_parse_error)
+            repair_prompt = (
+                f"{prompt}\n\n"
+                "STRICT JSON REPAIR INSTRUCTION:\n"
+                "Return ONE valid JSON object only. No markdown, no explanations, no trailing commas."
+            )
+            repaired_raw = await self._generate_structured_text(
+                llm_provider=llm_provider,
+                prompt=repair_prompt,
+                temperature=0.1,
+                max_tokens=3000,
+                response_format={"type": "json_object"},
+            )
+            try:
+                content = self._parse_json(repaired_raw)
+            except ValueError as second_parse_error:
+                logger.error(
+                    "SRS parse failed after retry for project %s: %s",
+                    project_id,
+                    second_parse_error,
+                )
+                raise ValueError(
+                    "Failed to parse SRS JSON after retry. Please retry or switch the AI provider/model."
+                ) from second_parse_error
 
         version = await self._next_version(db, project_id)
         draft = SRSDraft(
@@ -93,6 +121,29 @@ class SRSService:
 
         await SRSSnapshotCache.set_from_draft(draft)
         return draft
+
+    @staticmethod
+    async def _generate_structured_text(
+        *,
+        llm_provider: Any,
+        prompt: str,
+        temperature: float,
+        max_tokens: int,
+        response_format: Dict[str, Any] | None = None,
+    ) -> str:
+        try:
+            return await llm_provider.generate_text(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+            )
+        except TypeError:
+            return await llm_provider.generate_text(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
 
     def export_pdf(self, draft: SRSDraft) -> bytes:
         try:
@@ -184,6 +235,8 @@ class SRSService:
                 "كل متطلب تكتبه يجب أن يكون مستنِدًا مباشرةً لتصريح صريح أو مُضمَّن بوضوح في النص المقدَّم. "
                 "لا تفترض ولا تخترع ولا تُضيف أنماطًا معيارية من مجال التطبيق. "
                 "إذا لم يتناول النص منطقةً ما، اتركها فارغة وأضف سؤالاً للعميل في قسم questions.\n\n"
+                "## قاعدة الاحتفاظ بالتفاصيل الدقيقة (Micro-Details Retention)\n"
+                "يُمنع منعاً باتاً تلخيص أو تجريد المتطلبات. إذا ذكر المستخدم أسماء أنظمة فرعية (مثل POS, HACCP)، أو تكاملات خارجية (مثل Talabat)، أو تفاصيل دقيقة (مثل سجل تجاري، دفاع مدني)، يجب نقلها حرفياً وذكرها بالاسم داخل المتطلبات الوظيفية وغيرها. لا تستخدم عبارات عامة ومبهمة مثل 'دعم المتطلبات القانونية'.\n\n"
                 "## تعريف مستوى الثقة\n"
                 "- \"high\": ذُكر صراحةً في موضعين أو أكثر من النص.\n"
                 "- \"medium\": ذُكر مرة واحدة، أو يُستشفّ بوضوح من تصريحات أخرى.\n"
@@ -230,6 +283,8 @@ class SRSService:
             "statement in the provided transcript. Do NOT assume, invent, or pad with standard industry "
             "patterns. If a domain area was not discussed, leave its section items empty and add a "
             "client-facing question to the 'questions' array flagging the gap.\n\n"
+            "## Micro-Details Retention Rule (CRITICAL)\n"
+            "It is strictly forbidden to over-summarize or abstract requirements. If the user mentions specific subsystems (e.g., POS, HACCP), third-party integrations (e.g., Talabat), or exact details (e.g., tax card, fire safety), you MUST retain them literally and mention them by their specific names within the requirements. Do not use generic or vague abstractions like 'support legal requirements'.\n\n"
             "## Confidence Level Definition\n"
             "- \"high\": explicitly stated in 2+ distinct places in the transcript.\n"
             "- \"medium\": stated once, or clearly implied by other statements.\n"
@@ -296,6 +351,12 @@ class SRSService:
             parsed = SRSService._try_decode_embedded_json(cleaned)
         if parsed is None:
             parsed = SRSService._try_literal_eval_fallback(cleaned)
+        if parsed is None:
+            extracted = SRSService._extract_balanced_json_object(cleaned)
+            if extracted:
+                parsed = SRSService._try_parse_json_clean(extracted)
+                if parsed is None:
+                    parsed = SRSService._try_literal_eval_fallback(extracted)
 
         if not isinstance(parsed, dict):
             raise ValueError("Failed to parse SRS JSON")
@@ -334,6 +395,36 @@ class SRSService:
             return ast.literal_eval(candidate)
         except (ValueError, SyntaxError):
             return None
+
+    @staticmethod
+    def _extract_balanced_json_object(text: str) -> str | None:
+        start = text.find("{")
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escaped = False
+        for idx in range(start, len(text)):
+            ch = text[idx]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return text[start : idx + 1]
+        return None
 
     @staticmethod
     def _normalize_srs_content(content: Dict[str, Any]) -> Dict[str, Any]:

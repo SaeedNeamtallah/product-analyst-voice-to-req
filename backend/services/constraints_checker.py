@@ -13,6 +13,9 @@ from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
 from backend.providers.llm.factory import LLMProviderFactory
+# Import inside the method to avoid circular imports if any, or just import at top. 
+# We'll import at the top for clarity, but interview_service imports constraints_checker.
+# Let's import it inside the analyze method to be safe against circular imports.
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +43,7 @@ class SemanticEvaluator:
         system_prompt = (
             "You are an expert business analyst evaluating a user's response for a software project requirements gathering interview.\n"
             "Evaluate the user's latest answer against the current summary for ambiguity, scope risks, and contradictions.\n"
+            "CRITICAL: Base your evaluation STRICTLY on the provided text. Do not invent context or hallucinate contradictions that do not exist in the text.\n"
             "Return a JSON object matching the requested schema."
         )
         
@@ -50,12 +54,13 @@ class SemanticEvaluator:
         )
 
         try:
-            provider = LLMProviderFactory.get_provider()
-            raw_response, _ = await provider.generate_text(
+            from backend.services.interview_service import InterviewService
+            raw_response, _ = await InterviewService._generate_text_resilient(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 temperature=0.1,
                 max_tokens=500,
+                breaker_prefix="semantic_evaluator",
                 response_format={"type": "json_object"}
             )
             

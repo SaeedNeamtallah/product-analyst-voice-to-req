@@ -119,8 +119,15 @@ def _build_activity_diagrams_html(activity_diagrams: list[Any], labels: dict[str
         if not isinstance(diagram, dict):
             continue
         title = html.escape(_safe(diagram.get("title") or f"{labels['activity']} {idx}"))
+        body = ""
+        mermaid_code = _safe(diagram.get("activity_diagram_mermaid") or "").strip()
+        if mermaid_code:
+            body += f"<pre class=\"mermaid\">\n{html.escape(mermaid_code)}\n</pre>\n<br>\n"
+            
         flow_lines = _normalize_list(diagram.get("activity_diagram"))
-        body = _li_items(flow_lines)
+        if flow_lines:
+            body += _li_items(flow_lines)
+
         blocks.append(f"<section class=\"block\"><h3>{title}</h3>{body}</section>")
 
     if not blocks:
@@ -371,10 +378,15 @@ def _build_srs_html(draft: Any) -> str:
     {questions_html}
   </section>
 
-  <section class=\"block\">
+  <section class="block">
     <h3>{labels['next_steps']}</h3>
     {next_steps_html}
   </section>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({{ startOnLoad: true, theme: 'default' }});
+  </script>
 </body>
 </html>
 """

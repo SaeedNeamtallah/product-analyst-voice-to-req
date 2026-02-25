@@ -32,6 +32,7 @@ _MAX_SRS_CONTEXT_CHARS = 4000
 _MAX_COVERAGE_DECAY_DEFAULT = 8.0
 _MAX_COVERAGE_DECAY_RISK = 18.0
 _MIN_INTERVIEW_TURNS = 8
+_MAX_USER_MESSAGE_CHARS = 3000  # Truncate user messages longer than this before sending to LLM
 _COMPLETION_THRESHOLDS = {
     "discovery": 80,
     "scope": 70,
@@ -63,61 +64,49 @@ _ARABIC_CHAR_PATTERN = re.compile(r"[\u0600-\u06FF]")
 _LATIN_CHAR_PATTERN = re.compile(r"[A-Za-z]")
 
 _EN_SYSTEM = """\
-You are an expert Business Analyst acting as an Exploratory Agent.
-Your task is to conduct an interview with a NON-TECHNICAL client to elicit software requirements by making them talk as much as possible.
+You are an expert Business Analyst acting as a fast, conversational Exploratory Agent.
+Your task is to conduct an interview with a NON-TECHNICAL client to elicit software requirements.
 
 Return ONLY valid JSON with keys:
-- question: A short playback confirming understanding + exactly TWO open-ended, exploratory questions.
-- stage: discovery|scope|users|features|constraints.
-- done: boolean.
-- suggested_answers: [] (always an empty array).
-- patches: array of operations with schema:
-        * add: {"op":"add","area":"...","id":"req_x","value":"..."}
-        * remove: {"op":"remove","area":"...","id":"req_x"}
-        * update: {"op":"update","area":"...","id":"req_x","value":"..."}
-- coverage: per-area numbers 0-100.
+    "question": "your response to the user",
+    "stage": "discovery|scope|users|features|constraints",
+    "done": boolean (true if the user has provided enough details to cover the majority of the system)
 
 Interview Techniques & Rules (CRITICAL):
 1. The user is non-technical. Absolutely no software engineering jargon.
-2. Ask exactly TWO open-ended, generic questions per turn to encourage extensive talking.
+2. If the user provides a massive, detailed message (like a full list of requirements or a business plan), acknowledge it quickly: e.g., "This is excellent detail, I am saving this right now." and ask ONE follow up question. You DO NOT need to extract the data yourself, a background agent will do it.
 3. Playback / Active Listening: Start your 'question' field by briefly paraphrasing what the user just said to validate their input.
 4. Jobs-to-be-Done (JTBD): Focus on the business outcome or task the user wants to achieve, not UI elements.
-5. The 5 Whys & Avoid Premature Solutions: If the user suggests a specific app clone or a technical solution, gently pivot by asking "Why?" or "What core problem are we solving?" to find the root cause.
-6. User Scenarios (Storytelling): Ask the user to describe a workflow as a story (e.g., "Walk me through a typical day for your employee...").
-7. Detect contradiction from context and ask for clarification when needed.
-8. Always respond in the exact same language as the user's latest message.
-9. No markdown. No text outside JSON.
+5. The 5 Whys & Avoid Premature Solutions: If the user suggests a specific app clone or a technical solution, gently pivot by asking "Why?".
+6. Always respond in the exact same language as the user's latest message.
+7. No markdown. No text outside JSON.
+8. Anti-Hallucination: Do not invent, assume, or suggest features, constraints, or numbers that the user has not explicitly mentioned. Base your questions strictly on the provided context.
 """
 
 _AR_SYSTEM = """\
-أنت محلل أعمال (Business Analyst) خبير وتعمل كوكيل استكشافي (Exploratory Agent) على مستوى الـ Enterprise.
-مهمتك إجراء مقابلة مع عميل غير تقني (Non-technical) لاستخراج متطلبات النظام بذكاء ولباقة، لجعله يتحدث بأكبر قدر ممكن وسرد التفاصيل.
-
-## قاعدة إدارة الحالة الصارمة (Strict State Management)
-النظام الخلفي (Backend) يحتفظ بالذاكرة. وظيفتك إصدار "تحديثات دقيقة" (Patches) بناءً على آخر رد من العميل فقط.
-العمليات المسموحة: "add" (إضافة متطلب)، "remove" (إزالة متطلب)، "update" (تعديل متطلب موجود).
+أنت محلل أعمال خبير وتعمل كوكيل استكشافي سريع (Fast Conversational Agent).
+مهمتك إجراء مقابلة مع عميل غير تقني لاستخراج متطلبات النظام.
 
 يجب أن ترجع JSON صحيح فقط يحتوي على المفاتيح التالية:
-- question: إعادة صياغة قصيرة لتأكيد الفهم (Playback) + سؤالين (2) مفتوحين (استكشافيين/سيناريوهات).
-- stage: إحدى القيم (discovery, scope, users, features, constraints).
-- done: false إلا إذا تم تغطية كل شيء بنسبة 100%.
-- suggested_answers: [] (دائما قائمة فارغة).
-- patches: قائمة بعمليات التحديث.
-- coverage: كائن يحتوي على نسبة التغطية (0-100).
+    "question": "نص سؤالك أو ردك",
+    "stage": "إحدى المراحل discovery|scope|users|features|constraints",
+    "done": قيمة منطقية true في حال قدم العميل تفاصيل تكفي لتغطية النظام
 
-## أساليب الحوار المطلوبة (Elicitation Techniques):
+أساليب الحوار المطلوبة (CRITICAL):
 1. العميل غير تقني: تجنب تماماً أي مصطلحات برمجية، وتحدث بلغة البيزنس اليومية.
-2. سؤالين في كل مرة: اطرح دائماً سؤالين في ردك لفتح مجالات الحديث للعميل.
+2. التعامل مع السرد الكثيف: إذا قام العميل بتقديم رسالة طويلة جداً أو دراسة جدوى، قم بالرد السريع لشكر العميل وطمأنته أنك تسجلها الآن (مثلاً: "هذه تفاصيل ممتازة جداً، جاري حفظها بالكامل في مستند المتطلبات.") ثم اطرح سؤالاً واحداً فقط للمتابعة. لست بحاجة لاستخراج البيانات بنفسك، هناك وكيل في الخلفية يقوم بذلك.
 3. إعادة التشغيل (Playback): ابدأ ردك دائماً بتأكيد فهمك لكلام العميل بأسلوبك الخاص ليشعر بالثقة.
 4. المهمة المراد إنجازها (JTBD): ركز على "النتيجة" التي يريد العميل تحقيقها، وليس على شكل النظام أو الأزرار.
-5. تقنية (5 Whys) وتجنب الحلول المبكرة: إذا طلب العميل ميزة معينة كحل جاهز، اسأله بلطف "ليه محتاجين نعمل ده؟" أو "إيه المشكلة الأساسية هنا؟" للوصول للسبب الجذري.
-6. السيناريوهات (Storytelling): اطلب من العميل أن يحكي قصة. (مثال: "تخيل إننا أطلقنا النظام، احكيلي بالتفصيل إزاي يوم الموظف هيمشي عليه؟").
-7. لازم يكون الرد دائماً بنفس لغة آخر رسالة من العميل (عربي أو إنجليزي).
+5. تقنية (5 Whys): إذا طلب العميل ميزة معينة كحل جاهز، اسأله بلطف "ليه محتاجين نعمل ده؟" للوصول للسبب الجذري.
+6. لازم يكون الرد دائماً بنفس لغة آخر رسالة من العميل (عربي أو إنجليزي).
+7. منع التأليف (Anti-Hallucination): لا تقم باختراع أو افتراض أو اقتراح ميزات أو أرقام لم يذكرها العميل. 
+8. إرجاع JSON فقط.
 """
+
 
 _SEMANTIC_EXTRACTION_SYSTEM_EN = """\
 You are the Extraction node in an agentic requirements interview graph.
-Read the latest user answer and project memory, then output ONLY JSON with strict structure.
+Your role is to act as an \"Information Sponge\". Read the latest user answer and project memory, then output ONLY JSON with strict structure.
 
 Required JSON keys:
 - slots: object with keys discovery|scope|users|features|constraints, each value is an array of concise requirements.
@@ -127,16 +116,19 @@ Required JSON keys:
 - reason: concise string explaining the main risk/conflict (or empty).
 - confidence: number from 0 to 1.
 
-Rules:
-- Semantic interpretation only; do not rely on exact keywords.
-- Do not invent facts not present in the answer/memory.
-- Keep each slot item atomic and specific.
-Return JSON only.
+Omnivorous Extraction Rules (CRITICAL):
+1. Absolute Assimilation: Capture ANY business or technical requirement mentioned by the user and classify it into the correct slot, EVEN IF it does not directly answer your previous question. Do not ignore unprompted details.
+2. Bulk Data Handling: If the user provides a massive dump of information, stories, or examples, extract every single feature, constraint, or user role embedded in the text as a separate item in the slots.
+3. Extract implicit requirements from the user's narrative, not just direct answers.
+4. Semantic interpretation only; do not rely on exact keywords.
+5. Anti-Hallucination: While extracting implicit needs, NEVER invent net-new features or assumptions. Every extracted slot must have a direct basis in the user's narrative.
+6. Return JSON only.
 """
+
 
 _SEMANTIC_EXTRACTION_SYSTEM_AR = """\
 أنت عقدة الاستخراج (Extraction Node) في مخطط وكلاء لمقابلة المتطلبات.
-اقرأ آخر رد للعميل وذاكرة المشروع ثم أعد JSON فقط بالهيكل التالي:
+مهمتك هي العمل كـ \"إسفنجة معلومات\". اقرأ آخر رد للعميل وذاكرة المشروع ثم أعد JSON فقط بالهيكل التالي.
 
 المفاتيح المطلوبة:
 - slots: كائن يحتوي discovery|scope|users|features|constraints وكل قيمة مصفوفة متطلبات قصيرة.
@@ -146,11 +138,13 @@ _SEMANTIC_EXTRACTION_SYSTEM_AR = """\
 - reason: نص موجز يشرح أهم خطر/تعارض (أو فارغ).
 - confidence: رقم من 0 إلى 1.
 
-قواعد:
-- اعتمد على الفهم الدلالي وليس الكلمات المفتاحية الحرفية.
-- لا تختلق أي متطلبات غير موجودة في رد العميل/الذاكرة.
-- كل عنصر يجب أن يكون متطلبًا ذريًا واضحًا.
-أعد JSON فقط.
+قواعد الاستخراج الشامل (CRITICAL RULES):
+1. الاستيعاب المطلق (Omnivorous Extraction): التقط **أي** معلومة تقنية أو تجارية يذكرها العميل وصنفها في الـ slot المناسب، حتى لو كانت إجابته لا علاقة لها بالسؤال المطروح. لا تتجاهل أي تفصيلة.
+2. التعامل مع السرد الكثيف (Bulk Data): إذا قام العميل بذكر تفاصيل كثيرة جداً مرة واحدة (رغي/أمثلة/سيناريوهات)، استخرج كل ميزة، أو قيد، أو دور مستخدم ذكر في السرد وضعه كعنصر مستقل في الـ slots.
+3. التحديث المستقل: لا تعتمد فقط على الرد المباشر على السؤال، ابحث عن المتطلبات الضمنية (Implicit Requirements) داخل كلام العميل.
+4. اعتمد على الفهم الدلالي وليس الكلمات المفتاحية الحرفية.
+5. منع التأليف (Anti-Hallucination): أثناء استخراج المتطلبات الضمنية، يُمنع تماماً اختراع ميزات أو افتراضات جديدة. يجب أن يكون لكل متطلب مستخرج أساس مباشر في سرد العميل.
+6. أعد JSON فقط.
 """
 
 
@@ -272,11 +266,17 @@ class InterviewService:
             prompt=user_prompt,
             system_prompt=system_prompt,
             temperature=0.2,
-            max_tokens=2000,
+            max_tokens=4000,  # Increased to reduce truncation risk
             breaker_prefix="interview_main",
             response_format={"type": "json_object"},
         )
         interviewer_output = self._parse_json(raw)
+        interviewer_output = self._normalize_interviewer_output(
+            payload=interviewer_output,
+            language=language,
+            target_stage=target_stage,
+            fallback_coverage=last_coverage,
+        )
 
         return {
             "reflector_signals": reflector_signals,
@@ -286,6 +286,49 @@ class InterviewService:
                 "mode": "agentic_graph",
                 "agentic": agentic_reflector,
             },
+        }
+
+    @staticmethod
+    def _normalize_interviewer_output(
+        payload: Dict[str, Any] | None,
+        language: str,
+        target_stage: str,
+        fallback_coverage: Dict[str, Any] | None,
+    ) -> Dict[str, Any]:
+        data = payload if isinstance(payload, dict) else {}
+        question = str(data.get("question") or "").strip()
+        if not question:
+            question = (
+                "شكراً على مشاركتك! هل يمكنك إخبارنا بمزيد من التفاصيل عن المشروع؟"
+                if language == "ar"
+                else "Thank you for sharing! Could you tell us more details about what you'd like to build?"
+            )
+        stage = str(data.get("stage") or target_stage or "discovery").strip().lower()
+        if stage not in _ZERO_COVERAGE:
+            stage = target_stage if target_stage in _ZERO_COVERAGE else "discovery"
+
+        raw_coverage = data.get("coverage") if isinstance(data.get("coverage"), dict) else {}
+        base_coverage = fallback_coverage if isinstance(fallback_coverage, dict) else {}
+        merged_coverage: Dict[str, float] = {}
+        for area in _ZERO_COVERAGE:
+            source_value = raw_coverage.get(area, base_coverage.get(area, 0))
+            try:
+                numeric = float(source_value)
+            except (TypeError, ValueError):
+                numeric = float(base_coverage.get(area, 0) or 0)
+            merged_coverage[area] = max(0.0, min(100.0, numeric))
+
+        patches = data.get("patches") if isinstance(data.get("patches"), list) else []
+        suggested_answers = data.get("suggested_answers") if isinstance(data.get("suggested_answers"), list) else []
+
+        return {
+            "question": question,
+            "stage": stage,
+            "done": bool(data.get("done", False)),
+            "suggested_answers": suggested_answers,
+            "patches": patches,
+            "coverage": merged_coverage,
+            "summary": data.get("summary", {}),
         }
 
     async def _run_agentic_graph(
@@ -462,7 +505,7 @@ class InterviewService:
             merged["engine"] = "rule_based"
         return merged
 
-    async def get_next_question(
+    async def get_chat_response(
         self, db: AsyncSession, project_id: int, language: str = "ar",
         last_summary: Dict | None = None, last_coverage: Dict | None = None,
     ) -> Dict[str, Any]:
@@ -471,139 +514,120 @@ class InterviewService:
             lang = language if language in {"ar", "en"} else "ar"
             return self._initial_question(lang)
 
-        user_turn_count = await self._count_user_turns(db, project_id)
         conversation = self._format_conversation_windowed(messages)
         latest_user_answer = self._latest_user_message(messages)
         language = self._resolve_response_language(language, latest_user_answer)
-        srs_context = await self._get_latest_srs_context(db=db, project_id=project_id)
-        try:
-            orchestrator_state = await self._run_orchestrator_turn(
-                language=language,
-                conversation=conversation,
-                latest_user_answer=latest_user_answer,
-                last_summary=last_summary,
-                last_coverage=last_coverage,
-                srs_context=srs_context,
-            )
-        except Exception as error_:  # noqa: BLE001
-            logger.warning("Interview orchestrator degraded: %s", error_)
-            fallback_stage = self._pick_focus_area(last_coverage or {})
-            fallback_question = (
-                "الخدمة الذكية تحت ضغط حالياً. للتقدّم بدون توقف: ما القرار الأهم الآن في هذا المحور مع معيار قبول قابل للقياس؟"
+
+        if self._is_duplicate_message(messages):
+            dup_msg = (
+                "يبدو أنك أرسلت نفس الرسالة مرة أخرى. هل هناك شيء محدد تريد إضافته أو توضيحه؟"
                 if language == "ar"
-                else "AI service is under pressure right now. To keep moving: what is the single most important decision in this area with a measurable acceptance criterion?"
+                else "It looks like you sent the same message again. Is there something specific you'd like to add or clarify?"
             )
-            return {
-                "question": fallback_question,
-                "stage": fallback_stage,
-                "done": False,
-                "suggested_answers": [],
-                "summary": last_summary if isinstance(last_summary, dict) else {},
-                "coverage": last_coverage if isinstance(last_coverage, dict) else dict(_ZERO_COVERAGE),
-                "signals": {
-                    "degraded_mode": True,
-                    "reason": "llm_provider_unavailable",
-                },
-                "live_patch": {
-                    "warnings": [
-                        "الذكاء الاصطناعي يعمل بوضع احتياطي مؤقت." if language == "ar" else "AI is running in temporary degraded mode."
-                    ],
-                    "changed_areas": [],
-                    "alerts": [],
-                },
-                "cycle_trace": {
-                    "state_machine": {"version": "v1", "states": ["degraded"], "current": "degraded"},
-                },
-                "topic_navigation": {
-                    "target_stage": fallback_stage,
-                },
-            }
-        reflector_signals = orchestrator_state["reflector_signals"]
-        data = orchestrator_state["interviewer_output"]
+            return {"question": dup_msg, "stage": "discovery", "done": False}
+
+        if len(latest_user_answer) > _MAX_USER_MESSAGE_CHARS:
+            logger.warning(
+                "User answer too long (%d chars) — truncating to %d for LLM safety.",
+                len(latest_user_answer), _MAX_USER_MESSAGE_CHARS,
+            )
+            latest_user_answer = latest_user_answer[:_MAX_USER_MESSAGE_CHARS] + "… [تم اقتطاع الرسالة لأسباب تقنية]"
+
+        srs_context = await self._get_latest_srs_context(db=db, project_id=project_id)
+        
+        system_prompt = _AR_SYSTEM if language == "ar" else _EN_SYSTEM
+        user_prompt = f"Target language: {language}\n\n"
+        if srs_context:
+            user_prompt += f"Existing SRS Context:\n{json.dumps(srs_context, ensure_ascii=False)}\n\n"
+        user_prompt += f"Conversation history:\n{conversation}\n\nClient's latest reply: {latest_user_answer}"
+
+        try:
+            raw, _ = await self._generate_text_resilient(
+                prompt=user_prompt,
+                system_prompt=system_prompt,
+                temperature=0.3,
+                max_tokens=600,
+                breaker_prefix="interview_chatter",
+                response_format={"type": "json_object"},
+            )
+            data = self._parse_json(raw)
+        except Exception as error_:
+            logger.warning("Chatter agent degraded: %s", error_, exc_info=True)
+            data = {}
 
         question = str(data.get("question") or self._initial_question(language)["question"])
-        stage = str(data.get("stage", "discovery"))
+        stage = str(data.get("stage") or self._pick_focus_area(last_coverage or {}))
+        done = bool(data.get("done", False))
+
         question = self._enforce_question_language(question, language)
-
-        question = self._apply_soft_clarification_policy(
-            language=language,
-            question=question,
-            latest_user_answer=latest_user_answer,
-            reflector_signals=reflector_signals,
-        )
-
-        new_coverage = self._merge_coverage(
-            new_coverage=data.get("coverage", dict(_ZERO_COVERAGE)),
-            last_coverage=last_coverage,
-            reflector_signals=reflector_signals,
-        )
-
-        old_summary = self._normalized_summary(last_summary)
-        patches = data.get("patches") if isinstance(data.get("patches"), list) else []
-        if not patches:
-            patches = self._summary_to_patches(
-                new_summary=data.get("summary", {}),
-                last_summary=old_summary,
-            )
-        new_summary = self._apply_patches(
-            old_summary=old_summary,
-            patches=patches,
-        )
-
-        doc_patch = self._build_documentation_patch(
-            language=language,
-            stage=stage,
-            new_summary=new_summary if isinstance(new_summary, dict) else {},
-            old_summary=old_summary,
-            new_coverage=new_coverage,
-            old_coverage=last_coverage if isinstance(last_coverage, dict) else {},
-            reflector_signals=reflector_signals,
-        )
-        cycle_trace = self._build_cycle_trace(
-            language=language,
-            stage=stage,
-            reflector_signals=reflector_signals,
-            coverage=new_coverage,
-            doc_patch=doc_patch,
-        )
-        topic_navigation = self._build_topic_navigation(
-            language=language,
-            summary=new_summary if isinstance(new_summary, dict) else {},
-            coverage=new_coverage,
-            reflector_signals=reflector_signals,
-        )
-        cycle_trace["state_machine"] = {
-            "version": "v1",
-            "states": ["reason", "plan", "ask", "update"],
-            "current": "update",
-        }
-        suggested_answers: List[str] = []
-
-        completion_candidate = self._enforce_completion_gate(
-            llm_done=bool(data.get("done", False)),
-            coverage=new_coverage,
-            user_turn_count=user_turn_count,
-            reflector_signals=reflector_signals,
-        )
-        has_open_questions_round = self._has_open_questions_round(messages=messages)
-
-        if completion_candidate and not has_open_questions_round:
-            question = self._build_open_questions_question(language=language)
-            stage = "constraints"
-            completion_candidate = False
 
         return {
             "question": question,
             "stage": stage,
-            "done": completion_candidate,
-            "suggested_answers": suggested_answers,
-            "summary": new_summary if new_summary else "",
-            "coverage": new_coverage,
-            "signals": reflector_signals,
-            "live_patch": doc_patch,
-            "cycle_trace": cycle_trace,
-            "topic_navigation": topic_navigation,
+            "done": done,
+            "suggested_answers": [],
+            "signals": {"engine": "chatter", "fast_mode": True},
+            "live_patch": {},
+            "cycle_trace": {},
+            "topic_navigation": {"target_stage": stage},
         }
+
+    async def extract_background_patches(
+        self, project_id: int, language: str, session_factory: Any
+    ) -> None:
+        """Asynchronous background task to extract semantic patches using LivePatchService."""
+        from backend.services.live_patch_service import LivePatchService
+        from backend.database.models import SRSDraft, Project
+        from sqlalchemy import select
+        
+        async with session_factory() as db:
+            try:
+                # 1. Lock project to safely update SRSDraft
+                stmt_lock = select(Project).where(Project.id == project_id).with_for_update()
+                locked_project = await db.scalar(stmt_lock)
+                if not locked_project:
+                    return
+
+                messages = await self._get_project_messages(db, project_id)
+                if not messages:
+                    return
+
+                stmt_draft = select(SRSDraft).where(SRSDraft.project_id == project_id).order_by(SRSDraft.version.desc()).limit(1)
+                latest_draft = await db.scalar(stmt_draft)
+
+                draft_content = latest_draft.content if latest_draft and isinstance(latest_draft.content, dict) else {}
+                old_summary = draft_content.get("summary", {}) if draft_content else {}
+                old_coverage = draft_content.get("coverage", {}) if draft_content else {}
+
+                # 2. Extract using the robust, decoupled LivePatchService!
+                result = await LivePatchService.build_from_messages(
+                    language=language,
+                    messages=messages,
+                    last_summary=old_summary,
+                    last_coverage=old_coverage,
+                )
+
+                # 3. Save new state
+                new_content = {
+                    "summary": result.get("summary", old_summary),
+                    "coverage": result.get("coverage", old_coverage),
+                }
+
+                if latest_draft:
+                    latest_draft.content = new_content
+                    latest_draft.version += 1
+                else:
+                    new_draft = SRSDraft(project_id=project_id, content=new_content, version=1)
+                    db.add(new_draft)
+
+                await db.commit()
+                logger.info(f"Background extraction completed for project {project_id}")
+
+            except Exception as e:
+                await db.rollback()
+                logger.error(f"Background extraction failed for project {project_id}: {e}")
+    # Legacy variables unused by Chatter but referenced by other methods
+    # We leave _run_orchestrator_turn and related functions here in case they are used elsewhere
 
     @staticmethod
     def _build_cycle_trace(
@@ -717,28 +741,47 @@ class InterviewService:
         return InterviewService._infer_message_language(latest_user_answer, fallback=fallback)
 
     @staticmethod
+    def _is_duplicate_message(messages: List[ChatMessage]) -> bool:
+        """Return True if the last two user messages are identical (after normalization).
+        Prevents re-processing when a user accidentally sends the same message multiple times.
+        """
+        user_msgs = [m for m in messages if m.role == "user"]
+        if len(user_msgs) < 2:
+            return False
+        def _norm(text: str) -> str:
+            return re.sub(r"\s+", " ", str(text or "").strip().lower())
+        return _norm(user_msgs[-1].content) == _norm(user_msgs[-2].content)
+
+    @staticmethod
     def _enforce_question_language(question: str, language: str) -> str:
+        """Ensure the question is in the correct language. If a mismatch is detected,
+        prepend a translated version so the user always sees their own language."""
         text = str(question or "").strip()
         if not text:
             return text
 
-        has_ar = bool(_ARABIC_CHAR_PATTERN.search(text))
-        has_en = bool(_LATIN_CHAR_PATTERN.search(text))
+        arabic_chars = len(_ARABIC_CHAR_PATTERN.findall(text))
+        latin_chars = len(_LATIN_CHAR_PATTERN.findall(text))
+        total = arabic_chars + latin_chars
+        if total == 0:
+            return text
 
-        if language == "ar" and not has_ar and has_en:
+        arabic_ratio = arabic_chars / total
+
+        if language == "ar" and arabic_ratio < 0.4:
+            # LLM returned English in an Arabic conversation
+            logger.warning("Language mismatch detected: expected AR, got mostly EN. Prepending AR note.")
             return (
-                "فهمت كلامك، وهنكمل بالعربي. "
-                "ما أهم نتيجة عملية عايز تحققها من النظام في أول مرحلة؟ "
-                "واحكيلي سيناريو واقعي خطوة بخطوة بيحصل فيه التأخير الآن؟"
+                "(ملاحظة: تم اكتشاف رد بلغة مختلفة — يرجى الإجابة بالعربية)\n"
+                + text
             )
-
-        if language == "en" and has_ar and not has_en:
+        if language == "en" and arabic_ratio > 0.6:
+            # LLM returned Arabic in an English conversation
+            logger.warning("Language mismatch detected: expected EN, got mostly AR. Prepending EN note.")
             return (
-                "I understand your point, and we will continue in English. "
-                "What is the most important business outcome you want in phase one? "
-                "And can you walk me through a real step-by-step workflow where delays happen today?"
+                "(Note: Response was detected in a different language — please reply in English)\n"
+                + text
             )
-
         return text
 
     @staticmethod
@@ -1314,12 +1357,28 @@ class InterviewService:
     @staticmethod
     def _has_open_questions_round(messages: List[ChatMessage]) -> bool:
         """Detect whether the assistant already asked an explicit open-questions checkpoint."""
-        markers = _OPEN_QUESTION_MARKERS_EN | _OPEN_QUESTION_MARKERS_AR
+        # Use specific checkpoint phrases instead of generic question markers
+        # to avoid false positives from normal interview questions.
+        checkpoint_phrases_en = {
+            "before we close the interview",
+            "capture open questions",
+            "unresolved items",
+            "documented as explicit assumptions",
+            "out-of-scope boundaries",
+        }
+        checkpoint_phrases_ar = {
+            "قبل إنهاء المقابلة",
+            "إغلاق الأسئلة المفتوحة",
+            "غير محسومة",
+            "افتراضات أو قرارات",
+            "خارج النطاق",
+        }
+        checkpoint_phrases = checkpoint_phrases_en | checkpoint_phrases_ar
         for message in reversed(messages):
             if message.role != "assistant":
                 continue
             text = str(message.content or "").lower()
-            if any(marker in text for marker in markers):
+            if any(phrase in text for phrase in checkpoint_phrases):
                 return True
         return False
 
@@ -1357,9 +1416,15 @@ class InterviewService:
             )
 
         if has_ambiguity and InterviewService._looks_static_clarification(question):
-            return InterviewService._build_conversational_ambiguity_question(
-                language=language,
-                latest_user_answer=latest_user_answer,
+            answer = str(latest_user_answer or "").strip()
+            if language == "ar":
+                return (
+                    "ممتاز، خلّينا نوضّح الصورة أكثر ونكمّل. "
+                    f"بالنسبة للي ذكرته ( {answer} )، إيه أهم هدف أو ميزة لازم نثبتها أولاً؟"
+                )
+            return (
+                "Great, let's clarify this and keep moving. "
+                f"Regarding what you mentioned ( {answer} ), what is the most important goal or feature to lock first?"
             )
 
         return question
@@ -1413,31 +1478,11 @@ class InterviewService:
         )
 
     @staticmethod
-    def _build_conversational_ambiguity_question(language: str, latest_user_answer: str) -> str:
-        answer = str(latest_user_answer or "").strip()
-        answer_preview = answer[:220].strip()
-        if language == "ar":
-            return (
-                "ممتاز، خلّينا نحوّلها لنقطة محددة ونكمل. "
-                f"ذكرت: \"{answer_preview}\". "
-                "ممكن تحددها برقم أو قيد واضح (مثل عدد المستخدمين/زمن الاستجابة/الميزانية)؟"
-            )
-        return (
-            "Great, let's make it specific and keep moving. "
-            f"You mentioned: \"{answer_preview}\". "
-            "Can you pin it down with one concrete metric or constraint (e.g., users count, response time, or budget)?"
-        )
-
-    @staticmethod
     def _initial_question(language: str) -> Dict[str, Any]:
         initial_coverage = dict(_ZERO_COVERAGE)
         if language == "ar":
             return {
-                "question": (
-                    "فهمت إنك عايز تنظيم أفضل للشغل وتقليل التأخير. "
-                    "خلّيني أفهم الصورة بالكامل: ما النتيجة العملية الأهم اللي عايز تحققها من النظام؟ "
-                    "واحكيلي سيناريو يوم عمل حقيقي خطوة بخطوة من أول الطلب لحد التنفيذ؟"
-                ),
+                "question": "أهلاً بك. أنا هنا لمساعدتك في جمع متطلبات مشروعك. ماذا تود أن تبني اليوم؟",
                 "stage": "discovery",
                 "done": False,
                 "suggested_answers": [],
@@ -1445,11 +1490,7 @@ class InterviewService:
                 "coverage": initial_coverage,
             }
         return {
-            "question": (
-                "I understand you want a smoother workflow with fewer delays. "
-                "To map this clearly: what is the single most important business outcome you want this system to achieve? "
-                "And can you walk me through a real day-in-the-life workflow from request to completion?"
-            ),
+            "question": "Welcome. I'm here to help gather requirements for your project. What would you like to build today?",
             "stage": "discovery",
             "done": False,
             "suggested_answers": [],
@@ -1527,6 +1568,7 @@ class InterviewService:
 
     @classmethod
     def _requirements_similar(cls, left: str, right: str) -> bool:
+        """Check if two requirements are similar using token-set overlap (Jaccard)."""
         left_norm = cls._normalize_requirement(left)
         right_norm = cls._normalize_requirement(right)
 
@@ -1535,7 +1577,14 @@ class InterviewService:
         if left_norm == right_norm:
             return True
 
-        return left_norm == right_norm
+        # Fuzzy match: Jaccard similarity on word tokens
+        left_tokens = set(left_norm.split())
+        right_tokens = set(right_norm.split())
+        if not left_tokens or not right_tokens:
+            return False
+        intersection = left_tokens & right_tokens
+        union = left_tokens | right_tokens
+        return (len(intersection) / len(union)) >= 0.6
 
     @classmethod
     def _contains_similar_requirement(cls, existing_items: List[Any], new_item: str) -> bool:
@@ -1776,25 +1825,29 @@ class InterviewService:
 
     @staticmethod
     def _parse_json(raw: str) -> Dict[str, Any]:
+        import json_repair
         payload = str(raw or "").strip()
         if not payload:
             logger.warning("Empty interview JSON response")
             return {}
-
         try:
-            parsed = json.loads(payload)
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            fenced = InterviewService._extract_fenced_json(payload)
-            if fenced is None:
-                logger.warning("Failed to parse interview JSON response")
-                return {}
-            try:
-                parsed = json.loads(fenced)
-                return parsed if isinstance(parsed, dict) else {}
-            except json.JSONDecodeError:
-                logger.warning("Failed to parse extracted interview JSON")
-                return {}
+            # Use json_repair to handle truncated or malformed JSON
+            parsed_response = json_repair.loads(payload)
+            if not isinstance(parsed_response, dict):
+                raise ValueError("Parsed JSON is not a dictionary")
+            return parsed_response
+        except Exception as e:
+            logger.error(f"Failed to parse SRS JSON even with repair: {e}")
+            logger.error(f"Raw response was: {payload}")
+            # Return a safe fallback instead of crashing
+            return {
+                "question": "تم استلام تفاصيل كثيرة، جاري معالجتها. هل هناك إضافات أخرى؟",
+                "stage": "discovery",
+                "done": False,
+                "suggested_answers": [],
+                "patches": [],
+                "coverage": {}
+            }
 
     @staticmethod
     def _extract_fenced_json(payload: str) -> str | None:
@@ -1802,3 +1855,34 @@ class InterviewService:
         if not match:
             return None
         return match.group(1)
+
+    @staticmethod
+    def _extract_balanced_json(payload: str) -> str | None:
+        start = payload.find("{")
+        if start == -1:
+            return None
+
+        depth = 0
+        in_string = False
+        escaped = False
+        for idx in range(start, len(payload)):
+            char = payload[idx]
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if char == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+
+            if char == "{":
+                depth += 1
+            elif char == "}":
+                depth -= 1
+                if depth == 0:
+                    return payload[start : idx + 1]
+        return None

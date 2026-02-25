@@ -3,19 +3,21 @@ Interview routes for guided requirements questions.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database import get_db
-from backend.database.models import Project, User
+from backend.database import get_db, async_session_maker
+from backend.database.models import Project, User, SRSDraft
 from backend.routes.auth import get_current_user
-from backend.services.interview_draft_store import InterviewDraftStore
 from backend.services.interview_service import InterviewService
 from backend.services.telemetry_service import TelemetryService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Interview"])
 _interview_service = None
@@ -136,23 +138,65 @@ async def _get_user_project(db: AsyncSession, project_id: int, user: User) -> Pr
 
 @router.post("/projects/{project_id}/interview/next", response_model=InterviewResponse)
 async def next_question(
-    project_id: int,
-    payload: InterviewRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
+    project_id: int, 
+    payload: InterviewRequest, 
+    background_tasks: BackgroundTasks,
+    user: User = Depends(get_current_user), 
+    db: AsyncSession = Depends(get_db)
 ):
     await _get_user_project(db, project_id, user)
-    service = get_interview_service()
-    normalized_summary = _normalize_last_summary(payload.last_summary)
-    normalized_coverage = _normalize_last_coverage(payload.last_coverage)
-    result = await service.get_next_question(
-        db, project_id, payload.language,
-        last_summary=normalized_summary,
-        last_coverage=normalized_coverage,
-    )
-    await TelemetryService.record_interview_turn(db=db, project_id=project_id, result=result)
-    await db.commit()
-    return result
+    
+    # We do not lock the project here anymore to prevent blocking the fast chatter.
+    # The background task will lock the project when updating SRSDraft.
+    try:
+        service = get_interview_service()
+        stmt_draft = select(SRSDraft).where(SRSDraft.project_id == project_id).order_by(SRSDraft.version.desc()).limit(1)
+        latest_draft = await db.scalar(stmt_draft)
+        
+        draft_content = latest_draft.content if latest_draft and isinstance(latest_draft.content, dict) else {}
+        current_summary = draft_content.get("summary", {}) if draft_content else {}
+        current_coverage = draft_content.get("coverage", {}) if draft_content else {}
+
+        if not current_summary and payload.last_summary:
+            current_summary = _normalize_last_summary(payload.last_summary) or {}
+        if not current_coverage and payload.last_coverage:
+            current_coverage = _normalize_last_coverage(payload.last_coverage) or {}
+
+        # 1. Run the super fast Chatter Agent
+        result = await service.get_chat_response(
+            db=db, project_id=project_id,
+            language=payload.language,
+            last_summary=current_summary,
+            last_coverage=current_coverage
+        )
+
+        # 2. Fire the asynchronous Extractor Agent in the background
+        # Pass async_session_maker to create a new session isolated from the HTTP request context
+        background_tasks.add_task(
+            service.extract_background_patches,
+            project_id=project_id,
+            language=payload.language,
+            session_factory=async_session_maker
+        )
+
+        # 3. Return immediately!
+        return {
+            "question": result["question"],
+            "stage": result["stage"],
+            "done": result["done"],
+            "suggested_answers": result.get("suggested_answers"),
+            "summary": current_summary, # we just return the current one, background task updates it
+            "coverage": current_coverage,
+            "signals": result.get("signals"),
+            "live_patch": result.get("live_patch"),
+            "cycle_trace": result.get("cycle_trace"),
+            "topic_navigation": result.get("topic_navigation"),
+        }
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Interview error: {e}")
+        raise HTTPException(status_code=500, detail="Processing error")
 
 
 @router.get("/projects/{project_id}/interview/telemetry")
@@ -173,9 +217,6 @@ async def get_interview_draft(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(db, project_id, user)
-    redis_draft = await InterviewDraftStore.get(project_id)
-    if isinstance(redis_draft, dict):
-        return {"draft": redis_draft}
     return {"draft": _get_project_interview_draft(project)}
 
 
@@ -191,8 +232,6 @@ async def save_interview_draft(
     draft_data["summary"] = _normalize_last_summary(payload.summary)
     draft_data["coverage"] = _normalize_last_coverage(payload.coverage)
 
-    await InterviewDraftStore.set(project_id, draft_data)
-
     metadata = dict(project.extra_metadata or {})
     metadata["interview_draft"] = draft_data
     project.extra_metadata = metadata
@@ -207,7 +246,6 @@ async def clear_interview_draft(
     db: AsyncSession = Depends(get_db),
 ):
     project = await _get_user_project(db, project_id, user)
-    await InterviewDraftStore.delete(project_id)
     metadata = dict(project.extra_metadata or {})
     metadata.pop("interview_draft", None)
     project.extra_metadata = metadata

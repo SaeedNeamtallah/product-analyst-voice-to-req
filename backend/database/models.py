@@ -2,7 +2,8 @@
 Database models using SQLAlchemy async ORM.
 Defines tables for projects, assets, chat messages, and SRS drafts.
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, JSON, Index
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -126,4 +127,20 @@ class SRSDraft(Base):
     )
 
     def __repr__(self):
-        return f"<SRSDraft(id={self.id}, project_id={self.project_id}, version={self.version})>"
+        return f"<SRSDraft(id={self.id}, project_id={self.project_id}, version={self.version}, status='{self.status}')>"
+
+
+class TelegramSession(Base):
+    """Telegram session model for linking chat_id to project_id."""
+    __tablename__ = "telegram_sessions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    chat_id = Column(BigInteger, nullable=False, unique=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    project = relationship("Project")
+
+    def __repr__(self):
+        return f"<TelegramSession(chat_id={self.chat_id}, project_id={self.project_id})>"
