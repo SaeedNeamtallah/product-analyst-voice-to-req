@@ -1132,6 +1132,81 @@ const views = {
                 }
             };
 
+            // --- Telegram Bot Config ---
+            const tgTokenInput = document.getElementById('tg-bot-token');
+            const tgAdminInput = document.getElementById('tg-admin-id');
+            const tgEmailInput = document.getElementById('tg-api-email');
+            const tgPasswordInput = document.getElementById('tg-api-password');
+            const tgUrlInput = document.getElementById('tg-api-url');
+            const tgSaveBtn = document.getElementById('save-tg-config-btn');
+            const tgTokenToggle = document.getElementById('tg-token-toggle');
+            const tgStatus = document.getElementById('tg-config-status');
+
+            // Load current Telegram config
+            try {
+                const tgConfig = await api.get('/bot/telegram-config');
+                if (tgConfig.telegram_bot_token) tgTokenInput.placeholder = tgConfig.telegram_bot_token;
+                if (tgConfig.telegram_admin_id) tgAdminInput.value = tgConfig.telegram_admin_id;
+                if (tgConfig.bot_api_email) tgEmailInput.value = tgConfig.bot_api_email;
+                if (tgConfig.api_base_url) tgUrlInput.value = tgConfig.api_base_url;
+
+                if (tgConfig.has_token) {
+                    tgStatus.style.display = 'block';
+                    tgStatus.style.background = 'var(--success-bg, #d4edda)';
+                    tgStatus.style.color = 'var(--success, #155724)';
+                    tgStatus.innerHTML = '<i class="fas fa-check-circle"></i> Bot token is configured. Leave the token field empty to keep current token.';
+                }
+            } catch (e) {
+                console.error('Failed to load Telegram config:', e);
+            }
+
+            // Toggle token visibility
+            if (tgTokenToggle) {
+                tgTokenToggle.onclick = () => {
+                    const isPassword = tgTokenInput.type === 'password';
+                    tgTokenInput.type = isPassword ? 'text' : 'password';
+                    tgTokenToggle.querySelector('i').className = isPassword ? 'fas fa-eye-slash' : 'fas fa-eye';
+                };
+            }
+
+            // Save Telegram config
+            if (tgSaveBtn) {
+                tgSaveBtn.onclick = async () => {
+                    setButtonLoading(tgSaveBtn, true);
+                    try {
+                        const payload = {};
+                        if (tgTokenInput.value.trim()) payload.telegram_bot_token = tgTokenInput.value.trim();
+                        if (tgAdminInput.value.trim()) payload.telegram_admin_id = tgAdminInput.value.trim();
+                        if (tgEmailInput.value.trim()) payload.bot_api_email = tgEmailInput.value.trim();
+                        if (tgPasswordInput.value.trim()) payload.bot_api_password = tgPasswordInput.value.trim();
+                        if (tgUrlInput.value.trim()) payload.api_base_url = tgUrlInput.value.trim();
+
+                        if (Object.keys(payload).length === 0) {
+                            showNotification('Please fill in at least one field', 'warning');
+                            return;
+                        }
+
+                        await api.post('/bot/telegram-config', payload);
+                        showNotification('Telegram config saved! Restart the bot to apply.', 'success');
+
+                        // Update status indicator
+                        tgStatus.style.display = 'block';
+                        tgStatus.style.background = 'var(--success-bg, #d4edda)';
+                        tgStatus.style.color = 'var(--success, #155724)';
+                        tgStatus.innerHTML = '<i class="fas fa-check-circle"></i> Config saved. Restart the bot process to apply changes.';
+
+                        // Clear password field after save
+                        tgPasswordInput.value = '';
+                        tgTokenInput.value = '';
+                    } catch (e) {
+                        console.error('Telegram config save error:', e);
+                        showNotification('Failed to save Telegram config', 'error');
+                    } finally {
+                        setButtonLoading(tgSaveBtn, false);
+                    }
+                };
+            }
+
             applyTranslations();
         } catch (error) {
             console.error('Settings Error:', error);

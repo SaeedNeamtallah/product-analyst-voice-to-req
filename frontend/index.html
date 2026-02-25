@@ -47,7 +47,8 @@
                 </div>
                 <div class="form-group">
                     <label>كلمة المرور</label>
-                    <input type="password" id="login-password" class="form-control" required autocomplete="current-password">
+                    <input type="password" id="login-password" class="form-control" required
+                        autocomplete="current-password">
                 </div>
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-sign-in-alt"></i> تسجيل الدخول
@@ -66,7 +67,8 @@
                 </div>
                 <div class="form-group">
                     <label>كلمة المرور</label>
-                    <input type="password" id="register-password" class="form-control" minlength="6" required autocomplete="new-password">
+                    <input type="password" id="register-password" class="form-control" minlength="6" required
+                        autocomplete="new-password">
                 </div>
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="fas fa-user-plus"></i> إنشاء حساب
@@ -85,7 +87,8 @@
                     <i class="fas fa-brain-circuit"></i>
                     <span>Tawasul</span>
                 </div>
-                <button id="sidebar-toggle-btn" class="icon-btn sidebar-toggle-btn" title="Toggle sidebar" aria-label="Toggle sidebar">
+                <button id="sidebar-toggle-btn" class="icon-btn sidebar-toggle-btn" title="Toggle sidebar"
+                    aria-label="Toggle sidebar">
                     <i class="fas fa-angles-right"></i>
                 </button>
             </div>
@@ -167,7 +170,8 @@
         <div class="modal">
             <div class="modal-header">
                 <h3 id="modal-title">عنوان النافذة</h3>
-                <button class="close-modal" title="Close" aria-label="Close dialog"><i class="fas fa-times"></i></button>
+                <button class="close-modal" title="Close" aria-label="Close dialog"><i
+                        class="fas fa-times"></i></button>
             </div>
             <div id="modal-body" class="modal-body">
                 <!-- Modal content -->
@@ -299,29 +303,35 @@
                             <span class="chat-toggle-slider"></span>
                             <span class="chat-toggle-label" data-i18n="interview_mode">وضع المقابلة</span>
                         </label>
-                        <button id="chat-files-btn" class="chat-upload-ref-btn" title="Project Files" style="display: none;">
+                        <button id="chat-files-btn" class="chat-upload-ref-btn" title="Project Files"
+                            style="display: none;">
                             <i class="fas fa-folder-open"></i>
                             <span class="chat-upload-ref-label" data-i18n="project_files_btn">ملفات المشروع</span>
                         </button>
                     </div>
                     <div class="chat-header-actions">
-                        <button id="summary-toggle-btn" class="chat-clear-btn top-icon-btn" title="ملخص المتطلبات" aria-label="Toggle requirements summary" data-tooltip="ملخص المتطلبات">
+                        <button id="summary-toggle-btn" class="chat-clear-btn top-icon-btn" title="ملخص المتطلبات"
+                            aria-label="Toggle requirements summary" data-tooltip="ملخص المتطلبات">
                             <i class="fas fa-table-columns"></i>
                             <span>ملخص المتطلبات</span>
                         </button>
-                        <button id="interview-resume-btn" class="chat-clear-btn top-icon-btn" title="استكمال آخر مقابلة" aria-label="Resume last interview" data-tooltip="استكمال آخر مقابلة" disabled>
+                        <button id="interview-resume-btn" class="chat-clear-btn top-icon-btn" title="استكمال آخر مقابلة"
+                            aria-label="Resume last interview" data-tooltip="استكمال آخر مقابلة" disabled>
                             <i class="fas fa-rotate-left"></i>
                             <span>استكمال آخر مقابلة</span>
                         </button>
-                        <button id="interview-save-later-btn" class="chat-clear-btn top-icon-btn" title="احفظ وكمل بعدين" aria-label="Save and continue later" data-tooltip="احفظ وكمل بعدين">
+                        <button id="interview-save-later-btn" class="chat-clear-btn top-icon-btn"
+                            title="احفظ وكمل بعدين" aria-label="Save and continue later" data-tooltip="احفظ وكمل بعدين">
                             <i class="fas fa-floppy-disk"></i>
                             <span>احفظ وكمل بعدين</span>
                         </button>
-                        <button id="interview-review-btn" class="chat-clear-btn top-icon-btn" title="مراجعة قبل الإرسال" aria-label="Review before submit" data-tooltip="مراجعة قبل الإرسال" disabled>
+                        <button id="interview-review-btn" class="chat-clear-btn top-icon-btn" title="مراجعة قبل الإرسال"
+                            aria-label="Review before submit" data-tooltip="مراجعة قبل الإرسال" disabled>
                             <i class="fas fa-list-check"></i>
                             <span>مراجعة قبل الإرسال</span>
                         </button>
-                        <button id="clear-chat-btn" class="chat-clear-btn top-icon-btn" title="مسح المحادثة" aria-label="Clear chat" data-tooltip="مسح المحادثة">
+                        <button id="clear-chat-btn" class="chat-clear-btn top-icon-btn" title="مسح المحادثة"
+                            aria-label="Clear chat" data-tooltip="مسح المحادثة">
                             <i class="fas fa-trash-alt"></i>
                         </button>
                     </div>
@@ -368,7 +378,8 @@
                 <!-- Live Document Panel (Co-pilot) -->
                 <aside class="live-doc-panel" id="live-doc-panel" style="display:none;">
                     <div class="live-doc-header">
-                        <h3><i class="fas fa-file-lines"></i> <span data-i18n="live_doc_title">ملخص المتطلبات</span></h3>
+                        <h3><i class="fas fa-file-lines"></i> <span data-i18n="live_doc_title">ملخص المتطلبات</span>
+                        </h3>
                         <button id="live-doc-close" class="live-doc-close" title="Close" aria-label="Close panel">
                             <i class="fas fa-times"></i>
                         </button>
@@ -468,7 +479,8 @@
             <div class="config-card">
                 <p class="config-desc" data-i18n="ai_settings_desc">اختر مزود التوليد.</p>
                 <div class="config-section">
-                    <label for="ai-gen-provider" class="config-label" data-i18n="gen_provider_label">مزود التوليد</label>
+                    <label for="ai-gen-provider" class="config-label" data-i18n="gen_provider_label">مزود
+                        التوليد</label>
                     <select id="ai-gen-provider" class="form-control"></select>
                 </div>
                 <button id="save-ai-config-btn" class="btn btn-primary mt-4">
@@ -494,7 +506,8 @@
                 </div>
                 <div class="config-section">
                     <h3 data-i18n="bot_active_project">المشروع النشط</h3>
-                    <p class="config-desc" data-i18n="bot_active_project_desc">اختر المشروع الذي سيقوم البوت بالإجابة منه.</p>
+                    <p class="config-desc" data-i18n="bot_active_project_desc">اختر المشروع الذي سيقوم البوت بالإجابة
+                        منه.</p>
                     <select id="bot-active-project" class="form-control">
                         <option value="">اختر مشروعاً...</option>
                     </select>
@@ -515,13 +528,71 @@
                         <span data-i18n="update_profile">تحديث الملف الشخصي</span>
                     </button>
                 </div>
+                <div class="config-section mt-4" style="border-top: 2px solid var(--border); padding-top: 1.5rem;">
+                    <h3><i class="fab fa-telegram" style="color:#0088cc;margin-inline-end:8px;"></i> Connect Telegram
+                        Bot</h3>
+                    <p class="config-desc">
+                        Link your Telegram bot by entering the credentials below.
+                        Get a bot token from <a href="https://t.me/BotFather" target="_blank"
+                            style="color:var(--primary);font-weight:600;">@BotFather</a> on Telegram.
+                    </p>
+                    <div class="form-group">
+                        <label for="tg-bot-token">Bot Token <span
+                                style="color:var(--danger);font-weight:bold;">*</span></label>
+                        <div style="position:relative;">
+                            <input type="password" id="tg-bot-token" class="form-control"
+                                placeholder="123456789:ABCdefGHIjklMNOpqrSTUvwxYZ" style="padding-inline-end:3rem;">
+                            <button type="button" id="tg-token-toggle" class="icon-btn"
+                                style="position:absolute;top:50%;inset-inline-end:0.5rem;transform:translateY(-50%);font-size:0.85rem;"
+                                title="Show/Hide">
+                                <i class="fas fa-eye"></i>
+                            </button>
+                        </div>
+                        <small style="color:var(--text-secondary);">Paste the full token from @BotFather (e.g.
+                            <code>123456789:ABCdef...</code>)</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="tg-admin-id">Admin Telegram ID</label>
+                        <input type="text" id="tg-admin-id" class="form-control" placeholder="@username or numeric ID">
+                        <small style="color:var(--text-secondary);">Your Telegram username or numeric ID (get from <a
+                                href="https://t.me/userinfobot" target="_blank"
+                                style="color:var(--primary);">@userinfobot</a>)</small>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;">
+                        <div class="form-group">
+                            <label for="tg-api-email">Bot API Email</label>
+                            <input type="email" id="tg-api-email" class="form-control" placeholder="admin@tawasul.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="tg-api-password">Bot API Password</label>
+                            <input type="password" id="tg-api-password" class="form-control"
+                                placeholder="Leave empty to keep current">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="tg-api-url">API Base URL</label>
+                        <input type="text" id="tg-api-url" class="form-control" placeholder="http://localhost:8500">
+                        <small style="color:var(--text-secondary);">Backend server URL the bot connects to</small>
+                    </div>
+                    <div id="tg-config-status"
+                        style="display:none;padding:0.75rem 1rem;border-radius:8px;margin-bottom:1rem;font-size:0.9rem;">
+                    </div>
+                    <button id="save-tg-config-btn" class="btn btn-primary mt-4">
+                        <i class="fab fa-telegram"></i>
+                        <span>Save Telegram Config</span>
+                    </button>
+                    <p style="margin-top:1rem;font-size:0.85rem;color:var(--text-secondary);">
+                        <i class="fas fa-info-circle"></i>
+                        After saving, <strong>restart the Telegram bot</strong> process for changes to take effect.
+                    </p>
+                </div>
             </div>
         </div>
     </template>
 
     <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-    <script src="app.js?v=20260225-1"></script>
+    <script src="app.js?v=20260225-2"></script>
 </body>
 
 </html>

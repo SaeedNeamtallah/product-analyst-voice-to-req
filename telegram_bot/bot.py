@@ -103,6 +103,7 @@ def setup_handlers():
     # Callback handlers
     bot.callback_query_handler(func=lambda call: str(call.data or '').startswith('project:'))(handlers.handle_project_selection)
     bot.callback_query_handler(func=lambda call: str(call.data or '').startswith('srs:'))(handlers.handle_srs_action)
+    bot.callback_query_handler(func=lambda call: str(call.data or '').startswith('session:'))(handlers.handle_session_action)
     
     # Voice/audio handlers
     bot.message_handler(content_types=['voice'])(handlers.handle_voice)

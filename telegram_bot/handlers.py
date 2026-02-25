@@ -210,6 +210,24 @@ def _build_srs_actions_markup(language: str) -> types.InlineKeyboardMarkup:
     return markup
 
 
+def _build_session_actions_markup(language: str) -> types.InlineKeyboardMarkup:
+    """Build inline keyboard with options to add requirements or end session."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if language == "en":
+        markup.add(
+            types.InlineKeyboardButton(text="➕ Add More Requirements", callback_data="session:add_more"),
+            types.InlineKeyboardButton(text="📄 Generate SRS PDF", callback_data="srs:now"),
+            types.InlineKeyboardButton(text="✅ End Session & Book Appointment", callback_data="session:end"),
+        )
+    else:
+        markup.add(
+            types.InlineKeyboardButton(text="➕ إضافة متطلبات أخرى", callback_data="session:add_more"),
+            types.InlineKeyboardButton(text="📄 توليد ملف SRS PDF", callback_data="srs:now"),
+            types.InlineKeyboardButton(text="✅ إنهاء الجلسة وحجز موعد", callback_data="session:end"),
+        )
+    return markup
+
+
 def _resolve_user_language(text_hint: str, telegram_language_code: str | None) -> str:
     hinted = _detect_language(text_hint)
     if hinted in {"ar", "en"}:
@@ -261,7 +279,7 @@ def _assistant_fallback_text(language: str) -> str:
 
 
 def _srs_refresh_language(language: str) -> str:
-    return language if language in {"ar", "en"} else "ar"
+    return "en"  # Always generate SRS in English
 
 
 def _srs_need_more_details_text(language: str, detail: str) -> str:
@@ -543,11 +561,14 @@ def newproject_command(message):
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Failed to create project from /newproject: %s", exc)
-        bot.reply_to(
-            message,
-            "❌ تعذّر إنشاء مشروع جديد حالياً. حاول مرة أخرى.",
-            reply_markup=_build_persistent_menu_markup(user_lang),
-        )
+        try:
+            bot.reply_to(
+                message,
+                "❌ تعذّر إنشاء مشروع جديد حالياً. حاول مرة أخرى.",
+                reply_markup=_build_persistent_menu_markup(user_lang),
+            )
+        except Exception:
+            logger.error("Could not send error reply to Telegram")
 
 
 def srsnow_command(message):
@@ -615,7 +636,10 @@ def _generate_and_send_srs_pdf(*, chat_id: int, project_id: int, user_lang: str,
             if user_lang == "en"
             else "❌ تعذّر توليد SRS أو ملف PDF حالياً. حاول مرة أخرى بعد قليل."
         )
-        bot.edit_message_text(error_text, chat_id=chat_id, message_id=progress_message_id)
+        try:
+            bot.edit_message_text(error_text, chat_id=chat_id, message_id=progress_message_id)
+        except Exception:
+            logger.error("Could not send SRS error reply to Telegram")
 
 
 def handle_srs_action(call):
@@ -702,16 +726,19 @@ def handle_message(message):
             answer,
             chat_id=message.chat.id,
             message_id=thinking_msg.message_id,
-            reply_markup=_build_srs_actions_markup(language),
+            reply_markup=_build_session_actions_markup(language),
         )
         
     except Exception as e:
         logger.error("Error in telegram interview flow: %s", e)
-        bot.edit_message_text(
-            "❌ حدث خطأ في معالجة السؤال. حاول مرة أخرى بعد قليل.",
-            chat_id=message.chat.id,
-            message_id=thinking_msg.message_id
-        )
+        try:
+            bot.edit_message_text(
+                "❌ حدث خطأ في معالجة السؤال. حاول مرة أخرى بعد قليل.",
+                chat_id=message.chat.id,
+                message_id=thinking_msg.message_id
+            )
+        except Exception:
+            logger.error("Could not send interview error reply to Telegram")
 
 
 def handle_voice(message):
@@ -770,14 +797,109 @@ def handle_voice(message):
             ),
             chat_id=message.chat.id,
             message_id=thinking_msg.message_id,
-            reply_markup=_build_srs_actions_markup(language),
+            reply_markup=_build_session_actions_markup(language),
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("Error in telegram voice flow: %s", exc)
-        bot.edit_message_text(
-            "❌ Could not process this voice message right now."
-            if language == "en"
-            else "❌ تعذّر معالجة الرسالة الصوتية حالياً.",
-            chat_id=message.chat.id,
-            message_id=thinking_msg.message_id,
+        try:
+            bot.edit_message_text(
+                "❌ Could not process this voice message right now."
+                if language == "en"
+                else "❌ تعذّر معالجة الرسالة الصوتية حالياً.",
+                chat_id=message.chat.id,
+                message_id=thinking_msg.message_id,
+            )
+        except Exception:
+            logger.error("Could not send voice error reply to Telegram")
+
+
+def handle_session_action(call):
+    """Handle session action callbacks: session:add_more, session:end."""
+    data = str(call.data or "")
+    chat_id = int(call.message.chat.id)
+    user_lang = _resolve_user_language(
+        text_hint=str(getattr(call.message, "text", "") or ""),
+        telegram_language_code=getattr(call.from_user, "language_code", None),
+    )
+
+    if data == "session:add_more":
+        bot.answer_callback_query(
+            call.id,
+            "Continue adding requirements" if user_lang == "en" else "أكمل إضافة المتطلبات",
         )
+        prompt = (
+            "💡 Great! Please continue describing your requirements. "
+            "You can type or send a voice message."
+            if user_lang == "en"
+            else "💡 ممتاز! كمّل وصف المتطلبات اللي عايزها. "
+            "تقدر تكتب أو تبعت رسالة صوتية."
+        )
+        bot.send_message(
+            chat_id,
+            prompt,
+            reply_markup=_build_persistent_menu_markup(user_lang),
+        )
+        return
+
+    if data == "session:end":
+        project_id = get_chat_project(chat_id)
+        bot.answer_callback_query(
+            call.id,
+            "Ending session..." if user_lang == "en" else "جاري إنهاء الجلسة...",
+        )
+
+        # Generate SRS PDF before ending
+        if project_id:
+            progress = bot.send_message(
+                chat_id,
+                "⏳ Generating your final SRS document before ending the session..."
+                if user_lang == "en"
+                else "⏳ جاري توليد ملف SRS النهائي قبل إنهاء الجلسة...",
+            )
+            _generate_and_send_srs_pdf(
+                chat_id=chat_id,
+                project_id=project_id,
+                user_lang=user_lang,
+                progress_message_id=progress.message_id,
+            )
+
+        # Send booking / end session message
+        booking_markup = types.InlineKeyboardMarkup(row_width=1)
+        if user_lang == "en":
+            booking_markup.add(
+                types.InlineKeyboardButton(
+                    text="📅 Book an Appointment",
+                    url="https://calendly.com",
+                ),
+                types.InlineKeyboardButton(
+                    text="➕ Start a New Project",
+                    callback_data="project:new",
+                ),
+            )
+            end_text = (
+                "✅ Session ended successfully!\n\n"
+                "📄 Your SRS document has been sent above.\n\n"
+                "You can book an appointment with our team to discuss "
+                "your project further, or start a new project.\n\n"
+                "Thank you for using Tawasul AI! 🙏"
+            )
+        else:
+            booking_markup.add(
+                types.InlineKeyboardButton(
+                    text="📅 حجز موعد",
+                    url="https://calendly.com",
+                ),
+                types.InlineKeyboardButton(
+                    text="➕ بدء مشروع جديد",
+                    callback_data="project:new",
+                ),
+            )
+            end_text = (
+                "✅ تم إنهاء الجلسة بنجاح!\n\n"
+                "📄 تم إرسال ملف الـ SRS بالأعلى.\n\n"
+                "تقدر تحجز موعد مع فريقنا لمناقشة مشروعك بشكل أعمق، "
+                "أو تبدأ مشروع جديد.\n\n"
+                "شكراً لاستخدامك تواصل AI! 🙏"
+            )
+
+        bot.send_message(chat_id, end_text, reply_markup=booking_markup)
