@@ -1,0 +1,178 @@
+# المخططات الهندسية لمشروع Tawasul (SpecWise AI)
+
+بناءً على فهمي العميق لهندسة المشروع وأكواد الطبقات، قمتُ بتصميم هذه المخططات الهندسية باستخدام `Mermaid` لتوضيح تركيبة النظام ودورات عمله.
+
+---
+
+## 1. المخطط المعماري العام (High-Level Architecture)
+يوضح هذا المخطط أجزاء النظام كبنية **Modular Monolith** مقسمة إلى أربع طبقات رئيسية والاعتمادية بينها:
+
+```mermaid
+graph TD
+    %% قنوات الاتصال
+    subgraph Channels ["طبقة قنوات الاتصال (Channel Layer)"]
+        WebUI[واجهة الويب - Web Client]
+        Telegram[بوت تيليجرام - Telegram Bot]
+    end
+
+    %% طبقة الواجهات البرمجية
+    subgraph APILayer ["طبقة الواجهات (FastAPI Routers)"]
+        AuthRoute(مسار المصادقة Auth)
+        ProjectRoute(مسار المشاريع Projects)
+        InterviewRoute(مسار المقابلات Interview)
+        STTRoute(مسار الصوت STT)
+        SRSRoute(مسار الوثائق SRS)
+    end
+
+    %% طبقة الخدمات
+    subgraph ServiceLayer ["طبقة الخدمات (Service Layer)"]
+        InterviewSvc[Interview Orchestrator]
+        SRSSvc[SRS Service]
+        STTSvc[STT Pipeline]
+    end
+
+    %% طبقة المزودين
+    subgraph ProviderLayer ["طبقة مزودي الذكاء الاصطناعي (Provider Factory)"]
+        LLMFactory{LLM Factory}
+        Gemini[Gemini API]
+        Groq[Groq API]
+        Whisper[Whisper STT]
+    end
+
+    %% طبقة تخزين البيانات
+    subgraph DataLayer ["طبقة البيانات (Persistence Layer)"]
+        DB[(PostgreSQL)]
+    end
+
+    %% التدفق
+    WebUI --> APILayer
+    Telegram --> APILayer
+
+    AuthRoute --> DB
+    ProjectRoute --> DB
+    
+    InterviewRoute --> InterviewSvc
+    STTRoute --> STTSvc
+    SRSRoute --> SRSSvc
+
+    InterviewSvc --> LLMFactory
+    SRSSvc --> LLMFactory
+    STTSvc --> Whisper
+
+    LLMFactory --> Gemini
+    LLMFactory --> Groq
+
+    ServiceLayer --> DB
+```
+
+---
+
+## 2. مخطط التسلسل الزمني للحلقة الاستكشافية (Elicitation Loop Sequence Diagram)
+يبيّن هذا المخطط رحلة استلام المدخلات الصوتية/النصية من المستخدم، معالجتها، وتحديث مستند المتطلبات التراكمي (SRS) وصولاً إلى الرد بسؤال جديد.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as المستخدم
+    participant Client as واجهة الاستخدام
+    participant STT as طبقة الصوت (STT Route/Service)
+    participant Interview as المنسق (Interview Service)
+    participant LLM as مزود الذكاء (LLM Provider)
+    participant DB as قاعدة البيانات (Postgres)
+
+    User->>Client: إرسال رسالة (صوتية أو نصية)
+    
+    alt إدخال صوتي
+        Client->>STT: رفع الملف الصوتي
+        STT->>LLM: تحويل الصوت لنص (Whisper)
+        LLM-->>STT: نص خام
+        STT->>LLM: Post-processing (تنقيح وتصحيح النص)
+        LLM-->>STT: نص دقيق ومستخرج
+        STT-->>Client: إعادة النص المعالج
+    end
+
+    Client->>Interview: طلب التقدم في المقابلة (Next Step)
+    Interview->>DB: جلب آخر مسودة (SRS Draft) وتاريخ المحادثة
+    DB-->>Interview: البيانات الحالية (Context)
+    
+    Interview->>LLM: إرسال (Prompts + Draft + User Text)
+    LLM-->>Interview: استخراج التفاصيل الجديدة + رد المساعد
+    
+    Interview->>Interview: تطبيق التحديثات (Live Patch) على مسودة الـ SRS
+    Interview->>DB: حفظ رسالة المستخدم والمساعد + تحديث مسودة المشروع
+    
+    Interview-->>Client: إرسال الرد الجديد والسؤال للمستخدم
+    Client-->>User: قراءة الرد (واستمرار الدورة)
+```
+
+---
+
+## 3. مخطط نشاط حالة المشروع هندسياً (Interview State Activity Diagram)
+بحسب كود المُنسق (Interview Orchestrator)، تمر المحادثة بعدة حالات استكشافية تدريجياً.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Discovery : مرحلة الاستكشاف وضبط الهدف
+    
+    Discovery --> Scope : تحديد إطار المشروع (Scope)
+    Scope --> Users : تحديد أنواع المستخدمين (Users/Roles)
+    Users --> Features : استخراج الميزات الأساسية (Features)
+    Features --> Constraints : جمع القيود والمتطلبات غير الوظيفية
+    
+    Constraints --> Discovery : (توضيح أكثر إذا لزم الأمر)
+    Constraints --> Refinement : تقييم الوثيقة النهائية
+    Refinement --> [*]
+
+    state Refinement {
+        [*] --> TechnicalCritique
+        TechnicalCritique --> BusinessCritique
+        BusinessCritique --> ApplyFixes
+        ApplyFixes --> [*]
+    }
+```
+
+---
+
+## 4. مخطط علاقات الكيانات في قاعدة البيانات (Entity Relationship Diagram - ERD)
+بناءً على ملف [backend/database/models.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/database/models.py).
+
+```mermaid
+erDiagram
+    USERS {
+        int id PK
+        string email
+        string hashed_password
+        string full_name
+        boolean is_active
+        datetime created_at
+    }
+
+    PROJECTS {
+        int id PK
+        int owner_id FK
+        string name
+        string description
+        string status
+        datetime created_at
+    }
+
+    CHAT_MESSAGES {
+        int id PK
+        int project_id FK
+        string role "user, assistant, system"
+        text content
+        datetime created_at
+    }
+
+    SRS_DRAFTS {
+        int id PK
+        int project_id FK
+        int version
+        jsonb content
+        datetime generated_at
+    }
+
+    USERS ||--o{ PROJECTS : "owns"
+    PROJECTS ||--o{ CHAT_MESSAGES : "contains"
+    PROJECTS ||--o{ SRS_DRAFTS : "generates"
+```

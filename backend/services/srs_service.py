@@ -43,53 +43,61 @@ class SRSService:
         project_id: int,
         language: str = "ar",
     ) -> SRSDraft:
-        messages = await self._get_project_messages(db, project_id)
-        if not messages:
-            raise ValueError("No interview chat messages found for this project")
-
-        conversation = self._format_conversation(messages)
-        transcripts = ""
-
-        # Quality gate: ensure there is enough content for a meaningful SRS
-        self._quality_gate(conversation)
-
-        prompt = self._build_prompt(conversation, transcripts, language)
-
+        # Fetch the latest live patch draft which contains our incrementally built summaries
+        latest_draft = await self.get_latest_draft(db, project_id)
+        if not latest_draft or not isinstance(latest_draft.content, dict):
+            raise ValueError("No live patch draft found. Cannot generate final SRS. Please complete interview steps first.")
+        
+        draft_summary = latest_draft.content.get("summary", {})
+        if not draft_summary:
+            raise ValueError("Live patch draft has no summary data. Cannot generate final SRS.")
+            
         llm_provider = LLMProviderFactory.create_provider()
-        raw = await self._generate_structured_text(
+        
+        # 1. Generate Core Sections (Overview, Scope, Features, Constraints)
+        core_prompt = self._build_core_prompt(draft_summary, language)
+        core_raw = await self._generate_structured_text(
             llm_provider=llm_provider,
-            prompt=prompt,
-            temperature=0.3,
-            max_tokens=3000,
+            prompt=core_prompt,
+            temperature=0.2,
+            max_tokens=2500,
             response_format={"type": "json_object"},
         )
-        try:
-            content = self._parse_json(raw)
-        except ValueError as first_parse_error:
-            logger.warning("Initial SRS parse failed for project %s: %s", project_id, first_parse_error)
-            repair_prompt = (
-                f"{prompt}\n\n"
-                "STRICT JSON REPAIR INSTRUCTION:\n"
-                "Return ONE valid JSON object only. No markdown, no explanations, no trailing commas."
-            )
-            repaired_raw = await self._generate_structured_text(
-                llm_provider=llm_provider,
-                prompt=repair_prompt,
-                temperature=0.1,
-                max_tokens=3000,
-                response_format={"type": "json_object"},
-            )
-            try:
-                content = self._parse_json(repaired_raw)
-            except ValueError as second_parse_error:
-                logger.error(
-                    "SRS parse failed after retry for project %s: %s",
-                    project_id,
-                    second_parse_error,
-                )
-                raise ValueError(
-                    "Failed to parse SRS JSON after retry. Please retry or switch the AI provider/model."
-                ) from second_parse_error
+        core_content = self._parse_json(core_raw)
+        
+        # 2. Generate User Roles and Stories
+        users_prompt = self._build_users_prompt(draft_summary, language)
+        users_raw = await self._generate_structured_text(
+            llm_provider=llm_provider,
+            prompt=users_prompt,
+            temperature=0.2,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+        )
+        users_content = self._parse_json(users_raw)
+        
+        # 3. Generate Activity Diagrams
+        flow_prompt = self._build_flow_prompt(draft_summary, language)
+        flow_raw = await self._generate_structured_text(
+            llm_provider=llm_provider,
+            prompt=flow_prompt,
+            temperature=0.1,
+            max_tokens=1500,
+            response_format={"type": "json_object"},
+        )
+        flow_content = self._parse_json(flow_raw)
+        
+        # Merge all partial contents safely
+        merged_content = self._normalize_srs_content({
+            "metrics": core_content.get("metrics", []),
+            "sections": core_content.get("sections", []),
+            "questions": core_content.get("questions", []),
+            "next_steps": core_content.get("next_steps", []),
+            "summary": "Generated incrementally from live patches.",
+            "user_roles": users_content.get("user_roles", []),
+            "user_stories": users_content.get("user_stories", []),
+            "activity_diagrams": flow_content.get("activity_diagrams", []),
+        })
 
         version = await self._next_version(db, project_id)
         draft = SRSDraft(
@@ -97,14 +105,14 @@ class SRSService:
             version=version,
             status="draft",
             language=language,
-            content=content,
+            content=merged_content,
         )
         db.add(draft)
         await db.flush()
 
         try:
             refined_result = await self.judging_service.judge_and_refine(
-                srs_content=content,
+                srs_content=merged_content,
                 language=language,
                 project_id=project_id,
             )
@@ -195,120 +203,66 @@ class SRSService:
         return "\n\n".join(blocks)
 
     @staticmethod
-    def _build_prompt(conversation: str, transcripts: str, language: str) -> str:
-        # Truncate with visible markers so the LLM knows content may be cut
-        truncated_transcript = transcripts
-        truncated_chat = conversation
-        if len(transcripts) > 20000:
-            truncated_transcript = (
-                transcripts[:20000]
-                + "\n\n[TRANSCRIPT TRUNCATED — content beyond this point was omitted due to length. "
-                "Mark any sections where evidence was insufficient as confidence=low and add a question to the 'questions' array.]"
-            )
-        if len(conversation) > 8000:
-            truncated_chat = conversation[:8000] + "\n\n[CHAT TRUNCATED]"
-
-        evidence_parts = []
-        if truncated_transcript.strip():
-            evidence_parts.append(f"Interview transcripts:\n{truncated_transcript}")
-        if truncated_chat.strip():
-            evidence_parts.append(f"Project chat:\n{truncated_chat}")
-        evidence = "\n\n".join(evidence_parts)
-
+    def _build_core_prompt(summary: Dict[str, Any], language: str) -> str:
+        evidence = json.dumps(summary, ensure_ascii=False, indent=2)
         if language == "ar":
             return (
-                "أنت مهندس متطلبات معتمد بخبرة تزيد عن 20 عامًا في كتابة وثائق SRS الاحترافية.\n\n"
-                "## قاعدة التأسيس الحاسمة\n"
-                "كل متطلب تكتبه يجب أن يكون مستنِدًا مباشرةً لتصريح صريح أو مُضمَّن بوضوح في النص المقدَّم. "
-                "لا تفترض ولا تخترع ولا تُضيف أنماطًا معيارية من مجال التطبيق. "
-                "إذا لم يتناول النص منطقةً ما، اتركها فارغة وأضف سؤالاً للعميل في قسم questions.\n\n"
-                "## قاعدة الاحتفاظ بالتفاصيل الدقيقة (Micro-Details Retention)\n"
-                "يُمنع منعاً باتاً تلخيص أو تجريد المتطلبات. إذا ذكر المستخدم أسماء أنظمة فرعية (مثل POS, HACCP)، أو تكاملات خارجية (مثل Talabat)، أو تفاصيل دقيقة (مثل سجل تجاري، دفاع مدني)، يجب نقلها حرفياً وذكرها بالاسم داخل المتطلبات الوظيفية وغيرها. لا تستخدم عبارات عامة ومبهمة مثل 'دعم المتطلبات القانونية'.\n\n"
-                "## تعريف مستوى الثقة\n"
-                "- \"high\": ذُكر صراحةً في موضعين أو أكثر من النص.\n"
-                "- \"medium\": ذُكر مرة واحدة، أو يُستشفّ بوضوح من تصريحات أخرى.\n"
-                "- \"low\": مستنتج من معرفة المجال؛ غير موجود مباشرةً في النص.\n\n"
-                "## الأقسام الإلزامية السبعة (استخدم هذه العناوين بالضبط)\n"
-                "1. نظرة عامة وأهداف المشروع\n"
-                "2. أصحاب المصلحة وأدوار المستخدمين\n"
-                "3. المتطلبات الوظيفية\n"
-                "4. المتطلبات غير الوظيفية\n"
-                "5. قيود النظام\n"
-                "6. خارج النطاق\n"
-                "7. أسئلة مفتوحة وافتراضات\n\n"
-                "## قصص المستخدمين ومعايير القبول\n"
-                "لكل ميزة رئيسية مذكورة من قِبل العميل يجب توليد:\n"
-                "- قصة مستخدم بصيغة: 'بوصفي [نوع المستخدم]، أريد [الفعل]، حتى أستطيع [الهدف]'.\n"
-                "- معيار قبول قابل للقياس بصيغة: 'يُعتبر الشرط محققًا عندما [حالة قابلة للتحقق]'.\n\n"
-                "## قواعد صياغة المتطلبات\n"
-                "- كل عنصر في sections.items يجب أن يكون متطلبًا ذريًا كاملاً بصيغة: 'يجب أن يوفر النظام...'.\n"
-                "- المقاييس تعكس فقط ما ذكره العميل صراحةً. لا تخترع مؤشرات أداء.\n"
-                "- الأسئلة يجب أن تكون موجهة للعميل، محددة، وقابلة للإجابة — وليست عامة.\n"
-                "- next_steps هي إجراءات مُرتَّبة حسب الأولوية للفريق التطويري.\n"
-                "- activity_diagrams يجب أن تحتوي مخطط نشاط لكل نشاط/تدفق رئيسي في المنتج.\n\n"
-                "## قواعد الإخراج الصارمة\n"
-                "1) أخرج JSON صالح فقط — بدون markdown، بدون نص إضافي.\n"
-                "2) لا تضف أقسامًا خارج الأقسام السبعة المحددة.\n"
-                "3) إذا كان القسم بدون أدلة من النص، اجعل items قائمة فارغة [] وأضف سؤالاً في questions.\n"
-                "4) تنسيق المخرجات:\n"
-                '   {"summary": "...", "metrics": [{"label": "...", "value": "..."}], '
-                '"sections": [{"title": "نظرة عامة وأهداف المشروع", "confidence": "high|medium|low", "items": ["يجب أن يوفر النظام..."]}], '
-                '"user_stories": [{"role": "مسؤول", "action": "إدارة المستخدمين", "goal": "ضمان الأمان", "acceptance_criteria": ["يُعتبر الشرط محققًا عندما يستطيع المسؤول..."]}], '
-                '"user_roles": [{"role": "مسؤول النظام", "description": "يدير المستخدمين والصلاحيات", "permissions": ["إضافة مستخدمين", "تعديل الأدوار"]}], '
-                '"activity_diagram": ["بداية -> دخول المستخدم -> تحقق النظام -> عرض لوحة التحكم"], '
-                '"activity_diagram_mermaid": "flowchart TD\\n  A[بداية] --> B[دخول المستخدم] --> C[تحقق النظام] --> D[عرض لوحة التحكم]", '
-                '"activity_diagrams": [{"title": "تدفق تسجيل الدخول", "activity_diagram": ["بداية -> إدخال بيانات -> تحقق -> لوحة التحكم"], "activity_diagram_mermaid": "flowchart TD\\n  A[بداية] --> B[إدخال بيانات] --> C[تحقق] --> D[لوحة التحكم]"}], '
-                '"questions": ["..."], "next_steps": ["..."]}\n\n'
-                f"مصادر المشروع:\n{evidence}\n\n"
-                "الإخراج (JSON فقط):"
+                "أنت مهندس متطلبات معتمد بخبرة تزيد عن 20 عامًا.\n"
+                "قم بإنشاء الأقسام الأساسية بناءً على هذا الملخص التراكمي فقط.\n"
+                "## قاعدة التأسيس\nلا تضف أي متطلبات من خارج الملخص. احتفظ بالتفاصيل الدقيقة وأسماء الأنظمة.\n"
+                "## الأقسام المطلوبة\n"
+                "1. نظرة عامة وأهداف المشروع\n2. المتطلبات الوظيفية\n3. المتطلبات غير الوظيفية\n4. قيود النظام\n5. خارج النطاق\n6. أسئلة مفتوحة وافتراضات\n\n"
+                "الإخراج JSON فقط بالصيغة التالية:\n"
+                '{"metrics": [], "sections": [{"title": "...", "confidence": "high", "items": ["يجب أن..."]}], "questions": [], "next_steps": []}\n\n'
+                f"الملخص:\n{evidence}"
             )
-
         return (
-            "You are a certified Requirements Engineer with 20+ years writing professional SRS documents.\n\n"
-            "## CRITICAL GROUNDING RULE\n"
-            "Every requirement you write MUST be directly traceable to an explicit or strongly implied "
-            "statement in the provided transcript. Do NOT assume, invent, or pad with standard industry "
-            "patterns. If a domain area was not discussed, leave its section items empty and add a "
-            "client-facing question to the 'questions' array flagging the gap.\n\n"
-            "## Micro-Details Retention Rule (CRITICAL)\n"
-            "It is strictly forbidden to over-summarize or abstract requirements. If the user mentions specific subsystems (e.g., POS, HACCP), third-party integrations (e.g., Talabat), or exact details (e.g., tax card, fire safety), you MUST retain them literally and mention them by their specific names within the requirements. Do not use generic or vague abstractions like 'support legal requirements'.\n\n"
-            "## Confidence Level Definition\n"
-            "- \"high\": explicitly stated in 2+ distinct places in the transcript.\n"
-            "- \"medium\": stated once, or clearly implied by other statements.\n"
-            "- \"low\": inferred from general domain knowledge; NOT directly in transcript.\n\n"
-            "## Required Sections — use EXACTLY these 7 titles:\n"
-            "1. Project Overview & Objectives\n"
-            "2. Stakeholders & User Roles\n"
-            "3. Functional Requirements\n"
-            "4. Non-Functional Requirements\n"
-            "5. System Constraints\n"
-            "6. Out of Scope\n"
-            "7. Open Questions & Assumptions\n\n"
-            "## User Stories & Acceptance Criteria\n"
-            "For every major feature mentioned by the client, you MUST generate:\n"
-            "- A user story in the format: 'As a [user type], I want [action], so that [goal]'.\n"
-            "- At least one measurable acceptance criterion: 'The feature is complete when [verifiable condition]'.\n\n"
-            "## Requirement Phrasing Rules\n"
-            "- Every item in sections.items must be an atomic, complete requirement in 'The system SHALL...' format.\n"
-            "- Metrics must reflect ONLY what the client explicitly mentioned. Do not invent KPIs.\n"
-            "- Questions must be client-facing, specific, and answerable — not generic.\n"
-            "- next_steps must be prioritized action items for the development team.\n"
-            "- activity_diagrams must include one activity diagram for each major product activity/flow.\n\n"
-            "## Strict Output Rules\n"
-            "1) Return valid JSON only — no markdown fences, no preamble.\n"
-            "2) Do NOT add sections outside the 7 listed above.\n"
-            "3) If a section has no evidence in the transcript, set its items to [] and add a question.\n"
-            "4) Output format:\n"
-            '   {"summary": "...", "metrics": [{"label": "...", "value": "..."}], '
-            '"sections": [{"title": "Project Overview & Objectives", "confidence": "high|medium|low", "items": ["The system SHALL..."]}], '
-            '"user_stories": [{"role": "Admin", "action": "manage users", "goal": "ensure security", "acceptance_criteria": ["The feature is complete when the admin can add/remove users and role changes are audit-logged"]}], '
-            '"user_roles": [{"role": "System Administrator", "description": "Manages users and permissions", "permissions": ["add users", "edit roles", "view audit log"]}], '
-            '"activity_diagram": ["Start -> User signs in -> System validates credentials -> Dashboard"], '
-            '"activity_diagram_mermaid": "flowchart TD\\n  A[Start] --> B[User signs in] --> C[System validates credentials] --> D[Dashboard]", '
-            '"activity_diagrams": [{"title": "Login Flow", "activity_diagram": ["Start -> Enter credentials -> Validate -> Dashboard"], "activity_diagram_mermaid": "flowchart TD\\n  A[Start] --> B[Enter credentials] --> C[Validate] --> D[Dashboard]"}], '
-            '"questions": ["..."], "next_steps": ["..."]}\n\n'
-            f"Project sources:\n{evidence}\n\n"
-            "Output (JSON only):"
+            "You are a certified Requirements Engineer with 20+ years of experience.\n"
+            "Generate the core sections based ONLY on this cumulative summary.\n"
+            "## Grounding Rule\nDo not invent requirements. Keep micro-details and specific system names.\n"
+            "## Required Sections\n"
+            "1. Project Overview & Objectives\n2. Functional Requirements\n3. Non-Functional Requirements\n4. System Constraints\n5. Out of Scope\n6. Open Questions & Assumptions\n\n"
+            "Output JSON only in this format:\n"
+            '{"metrics": [], "sections": [{"title": "...", "confidence": "high", "items": ["The system SHALL..."]}], "questions": [], "next_steps": []}\n\n'
+            f"Summary:\n{evidence}"
+        )
+
+    @staticmethod
+    def _build_users_prompt(summary: Dict[str, Any], language: str) -> str:
+        evidence = json.dumps(summary, ensure_ascii=False, indent=2)
+        if language == "ar":
+            return (
+                "الرجاء استخراج أدوار المستخدمين وقصص المستخدمين من الملخص التالي.\n"
+                "الإخراج JSON فقط بالصيغة التالية:\n"
+                '{"user_roles": [{"role": "...", "description": "...", "permissions": ["..."]}], '
+                '"user_stories": [{"role": "...", "action": "...", "goal": "...", "acceptance_criteria": ["..."]}]}\n\n'
+                f"الملخص:\n{evidence}"
+            )
+        return (
+            "Extract User Roles and User Stories based ONLY on the following summary.\n"
+            "Output JSON only in this format:\n"
+            '{"user_roles": [{"role": "...", "description": "...", "permissions": ["..."]}], '
+            '"user_stories": [{"role": "...", "action": "...", "goal": "...", "acceptance_criteria": ["..."]}]}\n\n'
+            f"Summary:\n{evidence}"
+        )
+
+    @staticmethod
+    def _build_flow_prompt(summary: Dict[str, Any], language: str) -> str:
+        evidence = json.dumps(summary, ensure_ascii=False, indent=2)
+        if language == "ar":
+            return (
+                "قم بإنشاء مسارات العمل (Activity Diagrams) بناءً على الملخص التالي.\n"
+                "الإخراج JSON فقط بالصيغة التالية:\n"
+                '{"activity_diagrams": [{"title": "...", "activity_diagram": ["بداية -> خطوة 1 -> نهاية"], '
+                '"activity_diagram_mermaid": "flowchart TD\\n  A[بداية] --> B[خطوة 1] --> C[نهاية]"}]}\n\n'
+                f"الملخص:\n{evidence}"
+            )
+        return (
+            "Generate Activity Diagrams based ONLY on the following summary.\n"
+            "Output JSON only in this format:\n"
+            '{"activity_diagrams": [{"title": "...", "activity_diagram": ["Start -> Step 1 -> End"], '
+            '"activity_diagram_mermaid": "flowchart TD\\n  A[Start] --> B[Step 1] --> C[End]"}]}\n\n'
+            f"Summary:\n{evidence}"
         )
 
     @staticmethod

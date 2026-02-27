@@ -3,10 +3,32 @@ Shared resilience helpers: in-memory circuit breaker and async failover executio
 """
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Iterable, Optional, Tuple
 
+import httpx
+
 from backend.services.runtime_metrics import record_cb_event, record_cb_open_check
+from telegram_bot.config import bot_settings
+
+async def _send_telegram_alert(message: str) -> None:
+    """Send an alert to the Telegram admin if configured."""
+    token = bot_settings.telegram_bot_token
+    admin_id = bot_settings.telegram_admin_id
+    if not token or not admin_id:
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                url,
+                json={"chat_id": admin_id, "text": f"⚠️ Tawasul Alert:\n{message}"},
+                timeout=5.0,
+            )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Failed to send Telegram alert: {e}")
 
 
 class CircuitBreakerRegistry:
@@ -49,6 +71,14 @@ class CircuitBreakerRegistry:
         if failures >= max(1, int(threshold)):
             opened_until = now + timedelta(seconds=max(1, int(cooldown_seconds)))
             record_cb_event(self._group(key), "opened")
+            
+            # Fire an alert in the background
+            alert_msg = f"Circuit breaker OPENED for: {key}\nFailures: {failures}\nCooldown: {cooldown_seconds}s"
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(_send_telegram_alert(alert_msg))
+            except RuntimeError:
+                pass # Not running in an async loop or no loop available
         else:
             opened_until = None
 

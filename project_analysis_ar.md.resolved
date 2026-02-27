@@ -1,0 +1,107 @@
+### تقرير تحليل الكود لمشروع Tawasul (SpecWise AI)
+
+تم فحص الكود المشترك معكم ضمن المشروع، وإليكم التفاصيل الكاملة باللغة العربية بناءً على طلبكم:
+
+---
+
+#### 1. نقاط النهاية (Endpoints)، المدخلات والمخرجات المتوقعة
+يحتوي المشروع على العديد من نقاط النهاية (Endpoints) باستخدام FastAPI، نذكر هنا أبرزها حسب المسارات:
+
+**مسار صحة النظام (Health)**
+- `GET /health` | المدخلات: لا يوجد | المخرجات: `HealthResponse` (حالة النظام الأساسية)
+- `GET /health/ready` | المدخلات: لا يوجد | المخرجات: `ReadinessResponse` (بيانات جاهزية النظام)
+
+**مسار المصادقة (Auth)**
+- `POST /auth/register` | المدخلات: إيميل، وكلمة مرور، واسم مستخدم | المخرجات: `AuthResponse` (رمز مميز/Token + بيانات المستخدم)
+- `POST /auth/login` | المدخلات: بيانات الدخول | المخرجات: `AuthResponse`
+- `GET /auth/me` | المدخلات: رمز المصادقة (Token) | المخرجات: `UserResponse` (بيانات المستخدم الحالي)
+
+**مسار المشاريع (Projects)**
+- `POST /projects/` | المدخلات: تفاصيل مبدئية للمشروع | المخرجات: `ProjectResponse`
+- `GET /projects/` | المدخلات: لا يوجد | المخرجات: قائمة المشاريع `List[ProjectListResponse]`
+- `GET /projects/{project_id}` | المدخلات: `project_id` | المخرجات: `ProjectResponse`
+- `GET /projects/{project_id}/stats` | المدخلات: `project_id` | المخرجات: `ProjectStatsResponse` (إحصائيات المشروع)
+- `PUT /projects/{project_id}` | المدخلات: `project_id` وبيانات التحديث | المخرجات: `ProjectResponse`
+- `DELETE /projects/{project_id}` | المدخلات: `project_id` | المخرجات: `204 No Content` (بدون محتوى)
+
+**مسار المستندات المرفقة (Documents)**
+- `POST /projects/{project_id}/documents` | المدخلات: `project_id` وملف بحجم محدد | المخرجات: `AssetResponse`
+- `GET /projects/{project_id}/documents` | المدخلات: `project_id` | المخرجات: `List[AssetResponse]`
+- `DELETE /documents/{asset_id}` | المدخلات: `asset_id` | المخرجات: `204 No Content`
+
+**مسار تحويل الصوت إلى نص (STT)**
+- `POST /stt/transcribe` | المدخلات: ملف صوتي | المخرجات: `TranscribeResponse` (النص المُستخرج والمُصحح إملائيًا)
+- `GET /stt/providers` | المدخلات: لا يوجد | المخرجات: قائمة بمزودي خدمة التعرف على الصوت المتاحين
+
+**مسار المراسلة والمقابلة التفاعلية (Interview & Messages)**
+- `POST /projects/{project_id}/interview/next` | المدخلات: `project_id` ورد المستخدم الصوتي أو النصي | المخرجات: `InterviewResponse` (تتضمن رد الذكاء الاصطناعي الحالي والتحديثات)
+- `GET /projects/{project_id}/interview/draft` | المدخلات: `project_id` | المخرجات: مسودة استخلاص المتطلبات الفعالة الحالية
+
+**مسار وثيقة متطلبات النظام (SRS)**
+- `GET /projects/{project_id}/srs` | المدخلات: `project_id` | المخرجات: مسودة المتطلبات النهائية `SRSDraftResponse`
+- `POST /projects/{project_id}/srs/refresh` | المدخلات: `project_id` | المخرجات: تحديث وإعادة هيكلة ملف الـ SRS
+- `GET /projects/{project_id}/srs/export` | المدخلات: `project_id` | المخرجات: تصدير بصيغة للطباعة عبر روابط تحميل
+
+**مسار التقييم والتحليل (Judge)**
+- `POST /projects/{project_id}/judge` | المدخلات: `project_id` | المخرجات: `JudgingResponse` (تقييم فني وتجاري لوثيقة المتطلبات الحالية)
+
+---
+
+#### 2. قائمة المطالبات (AI Prompts) المستخدمة في المشروع
+يستخدم النظام عددًا من المطالبات الدقيقة (Prompts) لتوجيه النماذج (LLMs)، وتم رصد أهمها كالتالي:
+
+1. **خدمة تحويل الصوت لنص (`backend/services/stt.py`)**:
+   - `system_prompt`: "أنت خبير في معالجة وتصحيح النصوص. النص المُدخل هو مخرجات من نموذج تحويل الصوت إلى نص (Speech-to-Text). قم بتصحيحه نحويًا مع الالتزام بالسياق..."
+
+2. **خدمة الإجابات التخصصية ([backend/services/answer_service.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/services/answer_service.py))**:
+   - `_ANSWER_SYSTEM_PROMPT`: "أنت مهندس برمجيات استشاري (Consulting Software Engineer). مهمتك هي الإجابة على أسئلة العميل حول تفاصيل المتطلبات الحالية ومساعدته في حل المشكلات المباشرة."
+   - `system_prompt`: "أنت مستشار تقني/أعمال احترافي بمستوى مؤسسي (Industry-grade) للمشاريع البرمجية. الهدف: تقديم إجابة عميقة ومُهيكلة لحل تساؤل المستخدم بناءً على الموثق..."
+
+3. **خدمة صياغة وصناعة متطلبات المشروع ([backend/services/srs_service.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/services/srs_service.py))**:
+   - يتم بناء المطالبات ديناميكياً باستخدام الكود `_build_prompt` لتحديث المتطلبات من خلال تمرير الترجامات والمحادثات.
+   - وكذلك مطالبات الإصلاح مثل `repair_prompt` لتنقيح المسودات.
+
+4. **خدمة المقابلة الاستكشافية ([backend/services/interview_service.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/services/interview_service.py))**:
+   - يتم تبديل `system_prompt` و `user_prompt` بناءً على مرحلة المقابلة الحالية (مرحلة التفكير، وضع القيود، تفاصيل الميزات...).
+   - `_SEMANTIC_EXTRACTION_SYSTEM_AR`: مطالبة باللغة العربية مخصصة بالكامل لاستخراج "الحالة الدلالية" أو (Semantic State) ومفاهيم المشروع الفنية.
+
+5. **خدمة تقييم الوثيقة (Judge/ [backend/services/judging_service.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/services/judging_service.py))**:
+   - `_build_technical_critique_prompt`: لتقييم الوثيقة من الناحية الهندسية.
+   - `_build_business_critique_prompt`: لتقييمها من ناحية البزنس والقيمة التجارية المكتوبة في الـ SRS.
+   - `_build_srs_refinement_prompt`: لتعديل وتنقيح وإعادة صياغة مسودة المتطلبات بناءً على مخرجات التقاييم الفنية والتجارية.
+
+6. **خدمة التحديث الحيّ ([backend/services/live_patch_service.py](file:///c:/Users/saeid/OneDrive/Desktop/product-analyst-voice-to-req/backend/services/live_patch_service.py))**:
+   - `system_prompt`: "You are an enterprise requirements analyst. Extract semantic project state from conversation..." لاستخراج التعديلات الفردية الناتجة عن أي تفاعل للمستخدم ودمجها مباشرة في المستند.
+
+---
+
+#### 3. المخططات الهندسية (Diagrams - Activity, Sequence, SW Eng)
+- **نتيجة الفحص**: لم أتمكن من إيجاد أية مخططات برمجية بصيغ جاهزة للعرض كملفات معمارية صريحة (مثل كود `Mermaid.js` أو `PlantUML` سواءً لمخططات Activity / Sequence / Component) متضمنة فعلًا وسط الكود المرفق.
+- **التوثيق الحالي**: يكتفي المشروع بوصف هيكل التطبيق والتدفق بشكل نصي داخل دليل الاستخدام `README.md`، حيثُ ذُكر أنّ المعمارية من نوع **Modular Monolith** مقسّمة على هذه الطبقات: API Layer, Service Layer, Provider Layer, Persistence Layer, Channel Layer. ووُضحت دورتا العمل: `Elicitation Loop` و `SRS Export Loop`.
+*(أدرجت توصية بضرورة رسم مخططات فعلية في قسم التحسينات).*
+
+---
+
+#### 4. قضايا النظام الفنية (Issues & Bugs)
+بتحليل البناء والتغطية والملاحظات في الكود:
+1. **تزامن التحديث للمتطلبات (State Collision):** هناك خطر واضح (مذكور حتى ضمن Risk Matrix) يتعلق بالتضارب أو السباق (Race conditions) لتحديث مسودات الإجابات إذا قام المستخدم بطلب عمليات قراءة/كتابة متزامنة بشكل سريع، والاعتماد قائم على قفل صفوف PostgreSQL وهو نظام جيد لكنه قد يعيق سلاسة الاستجابات.
+2. **ملفات تحتوي على مفاتيح مكشوفة (API Keys Exposure):** تم العثور على ملفات برمجية للـ testing والـ restoring مثل `restore_env.py` في جذر المشروع تحتوي على نصوص صريحة لمفاتيح الذكاء الاصطناعي (مثل `GEMINI_API_KEY`)؛ هذا يعد خرقاً وثغرة ويجب إزالة هذه الأكواد لتلافي التسريب إذا رُفع المشروع كما هو.
+3. **تكوينات وإعدادات مفقودة في البيئة:** ملف `.env.example` لا يغطي بشكل كامل متغيرات تسجيل الأحداث (Logging level) وأنماط تصحيح الأخطاء (Debug Modes) للتعامل بشكل سليم أثناء الديبج.
+
+---
+
+#### 5. التحسينات والتوصيات (Enhancements & Recommendations)
+هذه أبرز التحسينات والمقترحات الهندسية التي ينصح بها للارتقاء بهيكل الكود وجودته:
+
+**أولاً: مستوى جودة التوثيق والهندسة (Architecture Quality):**
+1. **إنشاء المخططات الهندسية:** أنصح ببرمجة مخططات `Sequence Diagrams` (بواسطة أدوات كـ Mermaid) توضح رحلة استلام الرد الصوتي، وتفريغه بدقة عبر خدماتكم، ثم دورة الاستنتاج وإعادة إصدار المتطلبات التراكمية. كذلك رسم مخطط قواعد البيانات `ERD` بشكل فني مُنسّق.
+2. **نظام صفوف المهام (Task Queues):** النظام الحالي يستقبل ويعالج الملفات (STT / Documents) عبر FastAPI مباشرة؛ ينصح بدمج `Celery` أو أي Task Queue (مثل Redis) لترحيل مسارات رفع الصوت وتصدير وثائق الـ PDF الكبيرة، ليصبح النظام (Non-blocking) ومقاوماً للضغط المتزامن السريع.
+3. **التضمين والبحث الشامل (RAG System):** على الرغم من وجود ملف كـ `check_extension.py` لفحص امتداد الـ Vector DB، إلا أن المشروع يمكنه الاستفادة بشكل ضخم جداً من قاعدة بيانات متجهات حقيقية (مثل `Qdrant` أو تفعيل `pgvector`) لكي يستمد السياق بطريقة مرنة أثناء المقابلات بدلاً من وضع وثائق الـ SRS الكبيرة كاملة في الـ Context Window.
+
+**ثانياً: التحسينات الأمنية وإدارة التكوينات (Security \u0026 Settings):**
+1. **التخلص من الأكواد المكشوفة:** حذف الملف الأمني `restore_env.py` وكل إحالة صريحة لمفاتيح API. يجب أن تتم معالجتها فقط بواسطة `.env` لضمان أمان المصدر (Source control).
+2. **إدارة حصص الاستخدام (Rate Limiting):** بناء ميدلوير للـ API لتحديد وتقييد عدد الطلبات من كل مستخدم للـ LLM، تفادياً للأحمال المفتعلة وحماية لحصيلة ميزانيتكم وموارد السيرفر.
+
+**ثالثاً: تحسين الذكاء الاصطناعي (AI \u0026 Prompts Quality):**
+1. **الترقييع والاستمرارية (Failover Handling):** رغم الاعتماد على استراتيجية الـ `run_with_failover`، من المهم تتبع وإشعار مدير النظام (Telecom-Admin) حال تذبذب أداء مزود الـ LLM الأساسي (مثلاً Gemini) ليتم إعداد البدلاء بشكل سليم أو ترحيل عمليات المقابلة لنماذج أرخص.
+2. **الحد من الهلوسة (Hallucination Control):** للحفاظ على الدقة، من المستحسن تقسيم المسودة لفقرات وتوزيع تحديث المطالبات في تحديثات مجمعة تراكمية لا تغير شكل المستند بالكامل في كل طلب عابر.
