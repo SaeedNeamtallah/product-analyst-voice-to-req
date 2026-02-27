@@ -34,6 +34,7 @@ class InterviewRequest(BaseModel):
     language: str = Field(default="ar", pattern="^(ar|en)$")
     last_summary: Optional[Dict[str, Any]] = None
     last_coverage: Optional[Dict[str, Any]] = None
+    aim_for_100: bool = Field(default=False)
 
 
 def _normalize_last_summary(value: Optional[Dict[str, Any]]) -> Optional[Dict[str, List[str]]]:
@@ -167,7 +168,8 @@ async def next_question(
             db=db, project_id=project_id,
             language=payload.language,
             last_summary=current_summary,
-            last_coverage=current_coverage
+            last_coverage=current_coverage,
+            aim_for_100=payload.aim_for_100
         )
 
         # 2. Fire the asynchronous Extractor Agent in the background

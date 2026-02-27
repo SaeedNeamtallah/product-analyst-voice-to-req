@@ -369,7 +369,8 @@ const state = {
     authToken: safeStorageGet('authToken', null),
     currentUser: JSON.parse(safeStorageGet('currentUser', 'null')),
     lang: safeStorageGet('lang', 'ar'),
-    theme: safeStorageGet('theme', 'light')
+    theme: safeStorageGet('theme', 'light'),
+    aimFor100: false
 };
 
 let _msgIdCounter = 0;
@@ -3386,7 +3387,7 @@ async function handleInterviewTurn({ projectId, query, language, thinkingId, pen
             messages: [{ role: 'user', content: query, metadata: Object.keys(userMessageMetadata).length ? userMessageMetadata : undefined }]
         });
 
-        const interviewPayload = { language };
+        const interviewPayload = { language, aim_for_100: state.aimFor100 };
         // Do NOT send summary or coverage anymore; backend is source of truth
 
         const next = await api.post(
@@ -3477,11 +3478,57 @@ async function openInterviewReviewModal(projectId, language, interviewResult) {
                 <i class="fas fa-check-circle"></i>
                 <span>${state.lang === 'ar' ? 'إرسال وإنهاء المقابلة' : 'Submit and finish interview'}</span>
             </button>
+            <button id="interview-continue-100-btn" class="btn btn-secondary w-100 mt-2">
+                <i class="fas fa-forward"></i>
+                <span>${state.lang === 'ar' ? 'الاستمرار حتى 100% تغطية' : 'Continue until 100% coverage'}</span>
+            </button>
         </div>
     `;
     elements.modalOverlay.classList.remove('hidden');
 
     const submitBtn = document.getElementById('interview-final-submit');
+    const continueBtn = document.getElementById('interview-continue-100-btn');
+
+    if (continueBtn) {
+        // If everything is already 100%, hide it
+        const all100 = INTERVIEW_AREAS.every(area => Math.round(Number(coverage[area] || 0)) >= 100);
+        if (all100) continueBtn.style.display = 'none';
+
+        continueBtn.onclick = async () => {
+            state.aimFor100 = true;
+            elements.modalOverlay.classList.add('hidden');
+            showNotification(state.lang === 'ar' ? 'تم تفعيل وضع الاستمرار إلى 100%' : 'Continue to 100% activated', 'info');
+
+            // Re-open progress bar
+            const progressBar = document.getElementById('interview-progress');
+            if (progressBar) progressBar.style.display = 'block';
+
+            // Trigger next question automatically
+            const projectId = state.chatProjectId;
+            if (projectId) {
+                const msgId = Date.now();
+                appendBotMessage(msgId, '', 'thinking');
+                try {
+                    const next = await api.post(
+                        `/projects/${projectId}/interview/next`,
+                        { language: state.lang, aim_for_100: true },
+                        false
+                    );
+                    const questionText = next.question || (state.lang === 'ar' ? 'ما هي التفاصيل المتبقية؟' : 'What remaining details are there?');
+                    finalizeBotMessage(msgId, questionText, null);
+
+                    if (next.coverage) state.lastCoverage = next.coverage;
+                    state.interviewStage = next.stage || state.interviewStage;
+                    updateInterviewProgress(next.coverage, next.done, next.topic_navigation);
+                    updateInterviewAssistBar(next.coverage);
+                } catch (e) {
+                    console.error('Failed to continue to 100%', e);
+                    finalizeBotMessage(msgId, 'Failed to resume.', null);
+                }
+            }
+        };
+    }
+
     if (!submitBtn) return;
 
     submitBtn.onclick = async () => {

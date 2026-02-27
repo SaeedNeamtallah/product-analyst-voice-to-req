@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, select
 from backend.database import get_db
-from backend.database.models import Project, Asset, User
+from backend.database.models import Project, User
 from backend.routes.auth import get_current_user
 from backend.errors import is_database_unavailable_error, db_unavailable_http_exception
 
@@ -20,25 +20,11 @@ async def get_global_stats(
 ):
     """Get statistics scoped to the current user's projects."""
     try:
-        user_projects = select(Project.id).where(Project.user_id == user.id)
-
         project_count = (await db.execute(
             select(func.count()).select_from(Project).where(Project.user_id == user.id)
         )).scalar() or 0
 
-        doc_count = (await db.execute(
-            select(func.count()).select_from(Asset).where(Asset.project_id.in_(user_projects))
-        )).scalar() or 0
-
-        transcript_count = (await db.execute(
-            select(func.count()).select_from(Asset).where(
-                Asset.project_id.in_(user_projects),
-                Asset.extracted_text.isnot(None),
-                Asset.extracted_text != ""
-            )
-        )).scalar() or 0
-
-        return {"projects": project_count, "documents": doc_count, "transcripts": transcript_count}
+        return {"projects": project_count, "documents": 0, "transcripts": 0}
     except Exception as e:
         if is_database_unavailable_error(e):
             raise db_unavailable_http_exception()

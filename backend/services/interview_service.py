@@ -508,13 +508,14 @@ class InterviewService:
     async def get_chat_response(
         self, db: AsyncSession, project_id: int, language: str = "ar",
         last_summary: Dict | None = None, last_coverage: Dict | None = None,
+        aim_for_100: bool = False
     ) -> Dict[str, Any]:
         messages = await self._get_project_messages(db, project_id)
         if not messages:
             lang = language if language in {"ar", "en"} else "ar"
             return self._initial_question(lang)
 
-        conversation = self._format_conversation_windowed(messages)
+        conversation = await self._format_conversation_windowed(messages)
         latest_user_answer = self._latest_user_message(messages)
         language = self._resolve_response_language(language, latest_user_answer)
 
@@ -539,6 +540,11 @@ class InterviewService:
         user_prompt = f"Target language: {language}\n\n"
         if srs_context:
             user_prompt += f"Existing SRS Context:\n{json.dumps(srs_context, ensure_ascii=False)}\n\n"
+        if aim_for_100:
+            if language == "ar":
+                user_prompt += "CRITICAL INSTRUCTION: العميل يريد الاستمرار في المقابلة للوصول إلى تفاصيل بنسبة 100% في كافة الجوانب. لا تقم بإرجاع done=true إلا إذا استنفدت كل الأسئلة الممكنة حرفياً.\n\n"
+            else:
+                user_prompt += "CRITICAL INSTRUCTION: The client wants to continue the interview to reach 100% coverage in ALL areas. Do NOT output done=true unless you have absolutely exhausted every possible detail and edge case.\n\n"
         user_prompt += f"Conversation history:\n{conversation}\n\nClient's latest reply: {latest_user_answer}"
 
         try:
@@ -558,6 +564,13 @@ class InterviewService:
         question = str(data.get("question") or self._initial_question(language)["question"])
         stage = str(data.get("stage") or self._pick_focus_area(last_coverage or {}))
         done = bool(data.get("done", False))
+
+        if aim_for_100 and done:
+            current_cov = last_coverage or {}
+            for area in _COMPLETION_THRESHOLDS.keys():
+                if float(current_cov.get(area, 0)) < 100.0:
+                    done = False
+                    break
 
         question = self._enforce_question_language(question, language)
 
@@ -592,7 +605,7 @@ class InterviewService:
                 if not messages:
                     return
 
-                stmt_draft = select(SRSDraft).where(SRSDraft.project_id == project_id).order_by(SRSDraft.version.desc()).limit(1)
+                stmt_draft = select(SRSDraft).where(SRSDraft.project_id == project_id).order_by(SRSDraft.version.desc()).limit(1).with_for_update()
                 latest_draft = await db.scalar(stmt_draft)
 
                 draft_content = latest_draft.content if latest_draft and isinstance(latest_draft.content, dict) else {}
@@ -1527,16 +1540,27 @@ class InterviewService:
         return messages[::-1]
 
     @staticmethod
-    def _format_conversation_windowed(messages: List[ChatMessage]) -> str:
+    async def _format_conversation_windowed(messages: List[ChatMessage]) -> str:
         total = len(messages)
         recent = messages[-_MAX_RECENT_MESSAGES:]
 
         lines: List[str] = []
-        omitted = total - len(recent)
-        if omitted > 0:
-            lines.append(
-                f"[Older conversation omitted: {omitted} messages. Use previous summary/coverage as source of truth.]"
-            )
+        omitted_messages = messages[:-len(recent)] if len(recent) < total else []
+        
+        if omitted_messages:
+            from backend.services.summarize_task import summarize_old_messages
+            # Determine language based on last few messages
+            lang = "en"
+            for msg in recent[-5:]:
+                if _ARABIC_CHAR_PATTERN.search(str(msg.content)):
+                    lang = "ar"
+                    break
+            
+            summary = await summarize_old_messages(omitted_messages, lang)
+            if summary:
+                lines.append(f"[System Summary of previous {len(omitted_messages)} messages]: {summary}")
+            else:
+                lines.append(f"[Older conversation omitted: {len(omitted_messages)} messages. Use previous summary/coverage as source of truth.]")
 
         for msg in recent:
             role = msg.role.lower()

@@ -16,7 +16,7 @@ class OpenAICompatProvider(LLMInterface):
     """OpenAI-compatible LLM provider (text generation only)."""
 
     _FALLBACK_PROMPT_LIMIT_CHARS = 20000
-    _FALLBACK_MIN_MAX_TOKENS = 1024
+    _FALLBACK_MIN_MAX_TOKENS = 10000
 
     def _build_headers(self) -> Dict[str, str]:
         headers = {

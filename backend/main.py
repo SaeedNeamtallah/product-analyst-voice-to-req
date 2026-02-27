@@ -46,7 +46,7 @@ except Exception:  # noqa: BLE001
     _request_latency = None
 
 from backend.database import init_db, close_db
-from backend.routes import projects, documents, query, health, stats, bot_config, app_config, stt, srs, messages, interview, judge
+from backend.routes import projects, health, stats, bot_config, app_config, stt, srs, messages, interview, judge
 from backend.routes import auth
 from backend.routes import handoff
 
@@ -160,8 +160,6 @@ async def metrics_endpoint():
 app.include_router(health.router)
 app.include_router(auth.router)
 app.include_router(projects.router)
-app.include_router(documents.router)
-app.include_router(query.router)
 app.include_router(stats.router)
 app.include_router(bot_config.router)
 app.include_router(app_config.router)

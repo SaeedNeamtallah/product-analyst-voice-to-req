@@ -43,47 +43,12 @@ class Project(Base):
 
     # Relationships
     owner = relationship("User", backref="projects")
-    assets = relationship("Asset", back_populates="project", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Project(id={self.id}, name='{self.name}')>"
 
 
-class Asset(Base):
-    """Asset model for uploaded documents."""
-    __tablename__ = "assets"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
-    
-    # File information
-    filename = Column(String(500), nullable=False)
-    original_filename = Column(String(500), nullable=False)
-    file_path = Column(String(1000), nullable=False)
-    file_size = Column(Integer, nullable=False)  # in bytes
-    file_type = Column(String(50), nullable=False)  # pdf, txt, docx
-    extracted_text = Column(Text, nullable=True)
-    
-    # Status
-    status = Column(String(50), default="uploaded")  # uploaded, processing, completed, failed
-    error_message = Column(Text, nullable=True)
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    processed_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Metadata (renamed to avoid conflict)
-    extra_metadata = Column("metadata", JSON, default={})
-    
-    # Relationships
-    project = relationship("Project", back_populates="assets")
 
-    __table_args__ = (
-        Index('ix_assets_project_status', 'project_id', 'status'),
-    )
-
-    def __repr__(self):
-        return f"<Asset(id={self.id}, filename='{self.filename}', status='{self.status}')>"
 
 
 class ChatMessage(Base):

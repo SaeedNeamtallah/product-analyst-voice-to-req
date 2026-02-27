@@ -5,8 +5,7 @@ Business logic for project management.
 from typing import List, Optional, Dict, Any
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
-from backend.database.models import Project, Asset
-from backend.services.file_service import FileService
+from backend.database.models import Project
 from datetime import datetime
 import logging
 
@@ -18,7 +17,7 @@ class ProjectController:
     
     def __init__(self):
         """Initialize project controller."""
-        self.file_service = FileService()
+        pass
     
     async def create_project(
         self,
@@ -188,8 +187,7 @@ class ProjectController:
             True if deleted successfully
         """
         try:
-            # Delete files from storage
-            await self.file_service.delete_project_files(project_id)
+
 
             # Delete from database (cascade will handle assets)
             stmt = delete(Project).where(Project.id == project_id)
@@ -225,20 +223,13 @@ class ProjectController:
             Statistics dictionary
         """
         try:
-            # Get asset count
-            asset_stmt = select(Asset).where(Asset.project_id == project_id)
-            asset_result = await db.execute(asset_stmt)
-            assets = asset_result.scalars().all()
-            
-            transcript_count = sum(1 for a in assets if (a.extracted_text or "").strip())
-            
             return {
-                'asset_count': len(assets),
-                'transcript_count': transcript_count,
-                'total_size': sum(a.file_size for a in assets),
-                'completed_assets': sum(1 for a in assets if a.status == 'completed'),
-                'processing_assets': sum(1 for a in assets if a.status == 'processing'),
-                'failed_assets': sum(1 for a in assets if a.status == 'failed')
+                'asset_count': 0,
+                'transcript_count': 0,
+                'total_size': 0,
+                'completed_assets': 0,
+                'processing_assets': 0,
+                'failed_assets': 0
             }
             
         except Exception as e:

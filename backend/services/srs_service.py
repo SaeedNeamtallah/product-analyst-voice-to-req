@@ -13,7 +13,7 @@ from typing import Any, Dict, List
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.database.models import Asset, ChatMessage, SRSDraft
+from backend.database.models import ChatMessage, SRSDraft
 from backend.providers.llm.factory import LLMProviderFactory
 from backend.services.judging_service import JudgingService
 from backend.services.srs_pdf_html_renderer import render_srs_pdf_html
@@ -44,15 +44,14 @@ class SRSService:
         language: str = "ar",
     ) -> SRSDraft:
         messages = await self._get_project_messages(db, project_id)
-        transcript_blocks = await self._get_project_transcripts(db, project_id)
-        if not messages and not transcript_blocks:
-            raise ValueError("No interview transcripts or chat messages found for this project")
+        if not messages:
+            raise ValueError("No interview chat messages found for this project")
 
         conversation = self._format_conversation(messages)
-        transcripts = self._format_transcripts(transcript_blocks)
+        transcripts = ""
 
         # Quality gate: ensure there is enough content for a meaningful SRS
-        self._quality_gate(transcripts, conversation)
+        self._quality_gate(conversation)
 
         prompt = self._build_prompt(conversation, transcripts, language)
 
@@ -163,18 +162,6 @@ class SRSService:
         result = await db.execute(stmt)
         return list(result.scalars().all())
 
-    async def _get_project_transcripts(self, db: AsyncSession, project_id: int) -> List[Asset]:
-        stmt = (
-            select(Asset)
-            .where(
-                Asset.project_id == project_id,
-                Asset.extracted_text.isnot(None),
-                Asset.extracted_text != "",
-            )
-            .order_by(Asset.created_at.asc())
-        )
-        result = await db.execute(stmt)
-        return list(result.scalars().all())
 
     async def _next_version(self, db: AsyncSession, project_id: int) -> int:
         stmt = select(func.max(SRSDraft.version)).where(SRSDraft.project_id == project_id)
@@ -325,14 +312,14 @@ class SRSService:
         )
 
     @staticmethod
-    def _quality_gate(transcripts: str, conversation: str) -> None:
+    def _quality_gate(conversation: str) -> None:
         """Raise ValueError if combined content is too thin to produce a meaningful SRS."""
-        combined = (transcripts + " " + conversation).strip()
+        combined = conversation.strip()
         word_count = len(combined.split())
         if word_count < 80:
             raise ValueError(
                 f"Insufficient content for SRS generation: {word_count} words found. "
-                "A minimum of 80 words is required across the transcript and chat history. "
+                "A minimum of 80 words is required across the chat history. "
                 "Please complete more interview turns before generating the SRS."
             )
 
